@@ -2,6 +2,7 @@ from bselib.bse import BSE
 import sqlite3
 import requests
 import re
+import tqdm
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
@@ -17,7 +18,7 @@ NULL = "NULL"
 BSE_CODE_DIGITS = 6 #number of digits in a BSE stock code
 DATE_FORMAT = "%d-%m-%Y" #format of date used in bselib
 
-BSE = "BSE"
+BOMBAYSTOCKEXCHANGE = "BSE"
 INDIA = "INDIA"
 INR = "INR"
 
@@ -219,10 +220,10 @@ Specifically for BSE stocks only
 Input: 6-digit BSE stock code
 """
 def insertBSEData(identifier):
-    global initialized, STOCKNAME, EPS, PE, INDUSTRY, ROE, VALUERATIO, PROFITRATIO, CRORE, CRORE_VAL, LAKH, LAKH_VAL
+    global initialized, STOCKNAME, EPS, PE, INDUSTRY, ROE, VALUERATIO, PROFITRATIO, CRORE, CRORE_VAL, LAKH, LAKH_VAL, BOMBAYSTOCKEXCHANGE, c, b
     global NULL, CHANGE, FACEVALUE, FIFTYTWOWEEKHIGH, FIFTYTWOWEEKLOW, STOCKPRICE, MARKETCAP, VALUE, IN, TABLE, SCRIPCD
 
-    stockexchange = BSE
+    stockexchange = BOMBAYSTOCKEXCHANGE
     c.execute('SELECT * FROM STOCKITEM WHERE IDENTIFIER = ? AND STOCKEXCHANGE = ?', (identifier, stockexchange,))
 
     if initialized and len(c.fetchall()) == 0: #if tables have been created and stock item doesn't exist already in db
@@ -301,7 +302,7 @@ def insertBSEData(identifier):
             c.execute('SELECT * FROM EXCHANGE WHERE EXCHANGENAME = ?', (stockexchange,))
             if len(c.fetchall()) == 0:
                 #insert
-                c.execute('INSERT INTO EXCHANGE VALUES (?, ?, ?)', (BSE, INDIA, INR))
+                c.execute('INSERT INTO EXCHANGE VALUES (?, ?, ?)', (BOMBAYSTOCKEXCHANGE, INDIA, INR))
         except Exception as e:
             print (str(e))
 
@@ -313,12 +314,10 @@ def insertBSEData(identifier):
 
 def main():
     global companiesWithMissingInfo, missingFields
-    companies = getBSECodes()
-    createTables()
-    for i in range(len(companies)):
-        insertBSEData(companies[i])
-        percent = round(float(i)*100.0 / len(companies))
-        if i == len(companies) - 1 or (percent != 0 and percent % 10 == 0 and round(float(i+1)*100.0 / len(companies)) % 10 != 0):
-            print("Completed " + str(percent) + "% (" + str(i + 1) + "/" + str(len(companies)) + ") companies read\nMissing Fields: " + str(missingFields) + "\nCompanies with missing info: " + str(companiesWithMissingInfo) + "\n\n")
+    companies = tqdm.tqdm(getBSECodes()) #get list of companies
+    createTables() #create db tables
+    for i in companies:
+        insertBSEData(i)
+        companies.set_description("Reading companies")
 
 main()
