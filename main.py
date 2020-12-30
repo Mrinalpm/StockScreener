@@ -6,16 +6,49 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 #Global variables
+#User defined variables
 
-#link at which companies are available
-stock_list_link = "https://s3.amazonaws.com/quandl-static-content/BSE%20Descriptions/stocks.txt"
+stock_list_link = "https://s3.amazonaws.com/quandl-static-content/BSE%20Descriptions/stocks.txt" #link at which companies are available
+KEYWORD = '|BOM' #delimiter when reading company names
+CRORE = "Cr" #constant for crore
+LAKH = "Lakh" #constant for lakh
+db = "companyData.db" #name of database file
+NULL = "NULL"
+BSE_CODE_DIGITS = 6 #number of digits in a BSE stock code
+DATE_FORMAT = "%d-%m-%Y" #format of date used in bselib
 
-#delimiter when reading company names
-keyword = '|BOM'
+#The following are fields (dictionary keys) that exist in the json when data is read using the bselib
+#Dictionary values can be multi-level i.e. dictionaries within dictionaries and hence, related variables are grouped accordingly
+CHANGE = "change"
+FACEVALUE = "faceValue"
+FIFTYTWOWEEKHIGH = "fiftytwo_WeekHigh"
+FIFTYTWOWEEKLOW = "fiftytwo_WeekLow"
+STOCKPRICE = "stockPrice"
+STOCKNAME = 'stockName'
 
-#Constants for crore and lakh
-crore = "Cr"
-lakh = "Lakh"
+DIVIDENDS = 'dividends'
+DATA = 'data'
+HEADER = 'header'
+RECORDDATE = "Record Date"
+DIVIDENDPERCENTAGE = 'Dividend Percentage'
+
+MARKETCAP = 'mktCap'
+VALUE = 'value'
+IN = 'in'
+
+PROFITRATIO = 'profit_ratio'
+VALUERATIO = 'value_ratio'
+PE = 'PE'
+EPS = 'EPS'
+INDUSTRY = 'Industry'
+ROE = 'ROE'
+
+
+#identifier, stockexchange, change, fv, ftwh, ftwl, stockprice, marketcap, stockname, industry, eps, pe, divyield, fiveyearyield, roe
+stockAttributes = [0] * 15
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------#
+#Program variables
 full_pattern = re.compile('1234567890.') #number pattern
 
 b = BSE() #instance of BSE
@@ -26,10 +59,6 @@ totalCompanies = 0 #total number of companies available
 companiesWithMissingInfo = 0 #Number of companies with missing info (A single company might have >1 field missing, still counts as 1)
 missingFields = 0 #Total number of missing fields from all companies
 
-#identifier, stockexchange, change, fv, ftwh, ftwl, stockprice, marketcap, stockname, industry, eps, pe, divyield, fiveyearyield, roe
-stockAttributes = [0] * 15
-
-db = "companyData.db" #name of database file
 conn = sqlite3.connect(db)
 c = conn.cursor()
 
@@ -38,13 +67,13 @@ Function for getting 6 digit codes from the BSE
 Returns list containing codes
 """
 def getBSECodes():
-    global totalCompanies
-    toReturn = []
-    data = requests.get(stock_list_link).text.splitlines()
+    global totalCompanies, BSE_CODE_DIGITS
+    toReturn = [] #list to be returned
+    data = requests.get(stock_list_link).text.splitlines() #get data as array of lines
     for i in data:
-        if keyword in i:
-            toAdd = i.split(keyword)[1]
-            if len(toAdd) == 6:
+        if KEYWORD in i:
+            toAdd = i.split(KEYWORD)[1] #the 6-digit code
+            if len(toAdd) == BSE_CODE_DIGITS:
                 toReturn.append(toAdd)
                 totalCompanies += 1
     return toReturn
@@ -81,16 +110,26 @@ def createTables():
 
     initialized = True
 
+"""
+Function for validating a dpuble in the form of a string
+If valid, returns the double value as a string, else returns NULL
+"""
 def validateDouble(strParam):
-    toReturn = "NULL"
+    global NULL
+    toReturn = NULL
+
     try:
-        toReturn = str(float(strParam.replace(',','')))
-    except Exception as e:
-        toReturn = "NULL"
+        toReturn = str(float(strParam.replace(',',''))) #if any commas exist, remove them
+    except Exception as e: #exception occured, just return NULL
+        toReturn = NULL
     return toReturn
 
+"""
+Gets the date formatted as dd-mm-YYYY
+"""
 def getDate(date):
-    return datetime.strptime(date, "%d-%m-%Y")
+    global DATE_FORMAT
+    return datetime.strptime(date, DATE_FORMAT)
 
 def getLUTTable(list):
     toReturn = dict()
@@ -179,9 +218,9 @@ def insertBSEData(identifier):
         if 'mktCap' in data:
             marketCap = validateDouble(data['mktCap']['value'])
             if "NULL" not in marketCap:
-                if crore in data['mktCap']['in']:
+                if CRORE in data['mktCap']['in']:
                     marketCap = float(marketCap) * 10000000
-                if lakh in data['mktCap']['in']:
+                if LAKH in data['mktCap']['in']:
                     marketCap = float(marketCap) * 100000
         marketCap = str(marketCap)
 
