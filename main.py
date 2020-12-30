@@ -1,30 +1,42 @@
 from bselib.bse import BSE
 import sqlite3
-import pprint
 import requests
 import re
-import yfinance as yf
-import os
-
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
+#Global variables
+
+#link at which companies are available
 stock_list_link = "https://s3.amazonaws.com/quandl-static-content/BSE%20Descriptions/stocks.txt"
+
+#delimiter when reading company names
 keyword = '|BOM'
+
+#Constants for crore and lakh
 crore = "Cr"
 lakh = "Lakh"
-full_pattern = re.compile('1234567890.')
-b = BSE()
-totalCompanies = 0
-companiesWithMissingInfo = 0
-missingFields = 0
-initialized = False
+full_pattern = re.compile('1234567890.') #number pattern
+
+b = BSE() #instance of BSE
+initialized = False #initialization of db tables, initially false
+
+#Variables tracking how much info couldn't be read
+totalCompanies = 0 #total number of companies available
+companiesWithMissingInfo = 0 #Number of companies with missing info (A single company might have >1 field missing, still counts as 1)
+missingFields = 0 #Total number of missing fields from all companies
+
 #identifier, stockexchange, change, fv, ftwh, ftwl, stockprice, marketcap, stockname, industry, eps, pe, divyield, fiveyearyield, roe
 stockAttributes = [0] * 15
 
-conn = sqlite3.connect('example.db')
+db = "companyData.db" #name of database file
+conn = sqlite3.connect(db)
 c = conn.cursor()
 
+"""
+Function for getting 6 digit codes from the BSE
+Returns list containing codes
+"""
 def getBSECodes():
     global totalCompanies
     toReturn = []
@@ -34,9 +46,14 @@ def getBSECodes():
             toAdd = i.split(keyword)[1]
             if len(toAdd) == 6:
                 toReturn.append(toAdd)
-                totalCompanies+=1
+                totalCompanies += 1
     return toReturn
 
+"""
+Function for creating database tables
+Called when initializing the database
+global initialized will be set to true if table creation was successful
+"""
 def createTables():
     global initialized
     conn.execute('''CREATE TABLE EXCHANGE
