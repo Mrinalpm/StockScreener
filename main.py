@@ -5,6 +5,9 @@ import re
 import tqdm
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import pandas as pd
+import os.path
+from os import path
 
 #Global variables
 #User defined variables
@@ -69,9 +72,6 @@ totalCompanies = 0 #total number of companies available
 companiesWithMissingInfo = 0 #Number of companies with missing info (A single company might have >1 field missing, still counts as 1)
 missingFields = 0 #Total number of missing fields from all companies
 
-conn = sqlite3.connect(db)
-c = conn.cursor()
-
 """
 Function for getting 6 digit codes from the BSE
 Returns list containing codes
@@ -93,8 +93,9 @@ Function for creating database tables
 Called when initializing the database
 global initialized will be set to true if table creation was successful
 """
-def createTables():
+def createTables(conn):
     global initialized
+
     conn.execute('''CREATE TABLE EXCHANGE
         (EXCHANGENAME TEXT PRIMARY KEY   NOT NULL,
         COUNTRY     TEXT,
@@ -110,12 +111,12 @@ def createTables():
         STOCKPRICE DECIMAL,
         MARKETCAP DECIMAL,
         STOCKNAME TEXT,
-		INDUSTRY TEXT,
+        INDUSTRY TEXT,
         EPS DECIMAL,
         PE DECIMAL,
-		DIVIDENDYIELD DECIMAL,
-		FIVEYEARAVGDIVIDENDYIELD DECIMAL,
-		ROE DECIMAL,
+        DIVIDENDYIELD DECIMAL,
+        FIVEYEARAVGDIVIDENDYIELD DECIMAL,
+        ROE DECIMAL,
         PRIMARY KEY(IDENTIFIER, STOCKEXCHANGE));'''  )
 
     initialized = True
@@ -219,7 +220,7 @@ Function for adding the details of a particular stock to the database
 Specifically for BSE stocks only
 Input: 6-digit BSE stock code
 """
-def insertBSEData(identifier):
+def insertBSEData(identifier, conn):
     global initialized, STOCKNAME, EPS, PE, INDUSTRY, ROE, VALUERATIO, PROFITRATIO, CRORE, CRORE_VAL, LAKH, LAKH_VAL, BOMBAYSTOCKEXCHANGE, c, b
     global NULL, CHANGE, FACEVALUE, FIFTYTWOWEEKHIGH, FIFTYTWOWEEKLOW, STOCKPRICE, MARKETCAP, VALUE, IN, TABLE, SCRIPCD
 
@@ -261,7 +262,7 @@ def insertBSEData(identifier):
 
         stockName = NULL
         if STOCKNAME in data:
-           stockName = data[STOCKNAME]
+           stockName = data[STOCKNAME].replace('\'', '"')
 
         fiveyryield = NULL
         currentyield = NULL
@@ -284,7 +285,7 @@ def insertBSEData(identifier):
                 eps = str(data[PROFITRATIO][EPS])
         if VALUERATIO in data:
             if INDUSTRY in data[VALUERATIO]:
-                industry = str (data[VALUERATIO][INDUSTRY])
+                industry = str (data[VALUERATIO][INDUSTRY]).replace('\'', '"')
             if ROE in data[VALUERATIO]:
                roe = str (data[VALUERATIO][ROE])
 
@@ -312,12 +313,23 @@ def insertBSEData(identifier):
             query = getQuery([identifier, stockexchange, change, faceValue, fiftyTwoWeekHigh, fiftyTwoWeekLow, stockPrice, marketCap, stockName, industry, eps, pe, currentyield, fiveyryield, roe])
             conn.execute(query);
 
-def main():
-    global companiesWithMissingInfo, missingFields
-    companies = tqdm.tqdm(getBSECodes()) #get list of companies
-    createTables() #create db tables
-    for i in companies:
-        insertBSEData(i)
-        companies.set_description("Reading companies")
+def main(conn, c):
+    global companiesWithMissingInfo, missingFields, initialized
+    companies = getBSECodes() #get list of companies
+    #createTables(conn) #create db tables
+    initialized = True
+    if initialized: #proceed only if initialized
+        progressbar = tqdm.tqdm(companies)
+        for i in progressbar:
+            insertBSEData(i, conn)
+            progressbar.set_description("Reading companies")
+            conn.commit()
 
-main()
+try:
+    conn = sqlite3.connect(db)
+    c = conn.cursor()
+    main(conn, c)
+    #pd.set_option('display.max_columns', None)
+    #print(pd.read_sql_query("SELECT * FROM STOCKITEM", conn))
+except Exception as e:
+    print(str(e))
