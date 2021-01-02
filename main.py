@@ -53,8 +53,8 @@ ROE = 'ROE'
 TABLE = 'Table'
 SCRIPCD = 'scrip_cd'
 
-HEADERS = ["IDENTIFIER", "STOCKEXCHANGE", CHANGE, FACEVALUE, FIFTYTWOWEEKHIGH, FIFTYTWOWEEKLOW, STOCKPRICE, MARKETCAP, STOCKNAME, INDUSTRY, EPS, PE, "DIVIDENDYIELD", "FIVEYEARAVGDIVIDENDYIELD", ROE]
-#identifier, stockexchange, change, fv, ftwh, ftwl, stockprice, marketcap, stockname, industry, eps, pe, divyield, fiveyearyield, roe
+HEADERS = ["IDENTIFIER", "STOCKEXCHANGE", "CHANGE", "FACEVALUE", "FIFTYTWOWEEKHIGH", "FIFTYTWOWEEKLOW", "STOCKPRICE", "MARKETCAP", "STOCKNAME", "INDUSTRY", "EPS", "PE", "DIVIDENDYIELD", "FIVEYEARAVGDIVIDENDYIELD", "ROE"]
+#Column names of the stockitem table in the db
 stockAttributes = [0] * len(HEADERS)
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------#
@@ -66,6 +66,7 @@ LAKH_VAL = 100000 #value of one lakh
 
 b = BSE() #instance of BSE
 initialized = False #initialization of db tables, initially false
+conn = sqlite3.connect(db)
 
 #Variables tracking how much info couldn't be read
 totalCompanies = 0 #total number of companies available
@@ -93,8 +94,8 @@ Function for creating database tables
 Called when initializing the database
 global initialized will be set to true if table creation was successful
 """
-def createTables(conn):
-    global initialized
+def createTables():
+    global initialized, conn
 
     conn.execute('''CREATE TABLE EXCHANGE
         (EXCHANGENAME TEXT PRIMARY KEY   NOT NULL,
@@ -220,11 +221,13 @@ Function for adding the details of a particular stock to the database
 Specifically for BSE stocks only
 Input: 6-digit BSE stock code
 """
-def insertBSEData(identifier, conn):
-    global initialized, STOCKNAME, EPS, PE, INDUSTRY, ROE, VALUERATIO, PROFITRATIO, CRORE, CRORE_VAL, LAKH, LAKH_VAL, BOMBAYSTOCKEXCHANGE, c, b
-    global NULL, CHANGE, FACEVALUE, FIFTYTWOWEEKHIGH, FIFTYTWOWEEKLOW, STOCKPRICE, MARKETCAP, VALUE, IN, TABLE, SCRIPCD
+def insertBSEData(identifier):
+    global initialized, STOCKNAME, EPS, PE, INDUSTRY, ROE, VALUERATIO, PROFITRATIO, CRORE, CRORE_VAL, LAKH, LAKH_VAL, BOMBAYSTOCKEXCHANGE, b
+    global NULL, CHANGE, FACEVALUE, FIFTYTWOWEEKHIGH, FIFTYTWOWEEKLOW, STOCKPRICE, MARKETCAP, VALUE, IN, TABLE, SCRIPCD, conn
 
+    c = conn.cursor()
     stockexchange = BOMBAYSTOCKEXCHANGE
+
     c.execute('SELECT * FROM STOCKITEM WHERE IDENTIFIER = ? AND STOCKEXCHANGE = ?', (identifier, stockexchange,))
 
     if initialized and len(c.fetchall()) == 0: #if tables have been created and stock item doesn't exist already in db
@@ -313,23 +316,51 @@ def insertBSEData(identifier, conn):
             query = getQuery([identifier, stockexchange, change, faceValue, fiftyTwoWeekHigh, fiftyTwoWeekLow, stockPrice, marketCap, stockName, industry, eps, pe, currentyield, fiveyryield, roe])
             conn.execute(query);
 
-def main(conn, c):
-    global companiesWithMissingInfo, missingFields, initialized
+def printStats():
+    global conn, HEADERS
+    toPrint = ""
+
+
+    c = conn.cursor()
+    c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'STOCKITEM';")
+
+    length = len(c.fetchall())
+    if length == 1: #table exists
+        toPrint = "Number of missing fields:\n"
+        c.execute("SELECT COUNT(*) FROM STOCKITEM;")
+        result = c.fetchall()
+        assert (len(result) == 1)
+        size = result[0][0]
+        for field in HEADERS:
+            query = "SELECT COUNT(*) FROM STOCKITEM WHERE " + field + " IS ? OR " + field + " IS ?;"
+            c.execute(query, (None, "NULL",))
+            result = c.fetchall()
+            assert (len(result) == 1)
+            count = result[0][0]
+            toPrint += (field + ": " + str(count) + "/" + str(size) +"\n")
+        print(toPrint)
+
+def main():
+    global companiesWithMissingInfo, missingFields, initialized, conn
     companies = getBSECodes() #get list of companies
     #createTables(conn) #create db tables
     initialized = True
     if initialized: #proceed only if initialized
         progressbar = tqdm.tqdm(companies)
         for i in progressbar:
-            insertBSEData(i, conn)
+            insertBSEData(i)
             progressbar.set_description("Reading companies")
             conn.commit()
 
 try:
-    conn = sqlite3.connect(db)
-    c = conn.cursor()
-    main(conn, c)
-    #pd.set_option('display.max_columns', None)
-    #print(pd.read_sql_query("SELECT * FROM STOCKITEM", conn))
+    #main(conn, c)
+    pd.set_option('display.max_columns', None)
+    printStats()
+    k = 11
+    # c = conn.cursor()
+
+   # print(pd.read_sql_query("SELECT * FROM STOCKITEM WHERE NOT ? IS ? LIMIT 20", conn,None, True, ("FIVEYEARAVGDIVIDENDYIELD", None, )))
+
+    #print(len(c.fetchall()))
 except Exception as e:
     print(str(e))
