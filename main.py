@@ -6,27 +6,29 @@ import tqdm
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import pandas as pd
-import os.path
-from os import path
 
 #Global variables
 #User defined variables
 
-stock_list_link = "https://s3.amazonaws.com/quandl-static-content/BSE%20Descriptions/stocks.txt" #link at which companies are available
-KEYWORD = '|BOM' #delimiter when reading company names
-CRORE = "Cr" #constant for crore
-LAKH = "Lakh" #constant for lakh
-db = "companyData.db" #name of database file
+#link at which companies are available
+stock_list_link = "https://s3.amazonaws.com/quandl-static-content/BSE%20Descriptions/stocks.txt"
+
+KEYWORD = '|BOM'  #delimiter when reading company names
+CRORE = "Cr"  #constant for crore
+LAKH = "Lakh"  #constant for lakh
+db = "companyData.db"  #name of database file
 NULL = "NULL"
-BSE_CODE_DIGITS = 6 #number of digits in a BSE stock code
-DATE_FORMAT = "%d-%m-%Y" #format of date used in bselib
+BSE_CODE_DIGITS = 6  #number of digits in a BSE stock code
+DATE_FORMAT = "%d-%m-%Y"  #format of date used in bselib
 
 BOMBAYSTOCKEXCHANGE = "BSE"
 INDIA = "INDIA"
 INR = "INR"
 
-#The following are fields (dictionary keys) that exist in the json when data is read using the bselib
-#Dictionary values can be multi-level i.e. dictionaries within dictionaries and hence, related variables are grouped accordingly
+#The following are fields (dictionary keys) that exist in the json when data is read using
+#the bselib. Dictionary values can be multi-level i.e. dictionaries within dictionaries and
+#hence, related variables are grouped accordingly
+
 CHANGE = "change"
 FACEVALUE = "faceValue"
 FIFTYTWOWEEKHIGH = "fiftytwo_WeekHigh"
@@ -53,48 +55,51 @@ ROE = 'ROE'
 TABLE = 'Table'
 SCRIPCD = 'scrip_cd'
 
-HEADERS = ["IDENTIFIER", "STOCKEXCHANGE", "CHANGE", "FACEVALUE", "FIFTYTWOWEEKHIGH", "FIFTYTWOWEEKLOW", "STOCKPRICE", "MARKETCAP", "STOCKNAME", "INDUSTRY", "EPS", "PE", "DIVIDENDYIELD", "FIVEYEARAVGDIVIDENDYIELD", "ROE"]
+HEADERS = ["IDENTIFIER", "STOCKEXCHANGE", "CHANGE", "FACEVALUE", "FIFTYTWOWEEKHIGH", "FIFTYTWOWEEKLOW", "STOCKPRICE",
+           "MARKETCAP", "STOCKNAME", "INDUSTRY", "EPS", "PE", "DIVIDENDYIELD", "FIVEYEARAVGDIVIDENDYIELD", "ROE"]
 #Column names of the stockitem table in the db
-stockAttributes = [0] * len(HEADERS)
 
-#----------------------------------------------------------------------------------------------------------------------------------------------------#
+#Dictionary keys when running a query
+MIN = "Min"
+MAX = "Max"
+
+#----------------------------------------------------------------------------------------------------------------------#
 #Program variables
-full_pattern = re.compile('1234567890.') #number pattern
+full_pattern = re.compile('1234567890.')  #number pattern
 
-CRORE_VAL = 10000000 #value of one crore
-LAKH_VAL = 100000 #value of one lakh
+CRORE_VAL = 10000000  #value of one crore
+LAKH_VAL = 100000  #value of one lakh
 
-b = BSE() #instance of BSE
-initialized = False #initialization of db tables, initially false
+b = BSE()  #instance of BSE
+initialized = False  #initialization of db tables, initially false
 conn = sqlite3.connect(db)
-
-#Variables tracking how much info couldn't be read
-totalCompanies = 0 #total number of companies available
-companiesWithMissingInfo = 0 #Number of companies with missing info (A single company might have >1 field missing, still counts as 1)
-missingFields = 0 #Total number of missing fields from all companies
 
 """
 Function for getting 6 digit codes from the BSE
 Returns list containing codes
 """
-def getBSECodes():
-    global totalCompanies, BSE_CODE_DIGITS
-    toReturn = [] #list to be returned
-    data = requests.get(stock_list_link).text.splitlines() #get data as array of lines
+
+
+def get_bse_codes():
+    global BSE_CODE_DIGITS, stock_list_link, KEYWORD
+    to_return = []  #list to be returned
+    data = requests.get(stock_list_link).text.splitlines()  #get data as array of lines
     for i in data:
         if KEYWORD in i:
-            toAdd = i.split(KEYWORD)[1] #the 6-digit code
-            if len(toAdd) == BSE_CODE_DIGITS:
-                toReturn.append(toAdd)
-                totalCompanies += 1
-    return toReturn
+            to_add = i.split(KEYWORD)[1]  #the 6-digit code
+            if len(to_add) == BSE_CODE_DIGITS:
+                to_return.append(to_add)
+    return to_return
+
 
 """
 Function for creating database tables
 Called when initializing the database
 global initialized will be set to true if table creation was successful
 """
-def createTables():
+
+
+def create_tables():
     global initialized, conn
 
     conn.execute('''CREATE TABLE EXCHANGE
@@ -118,42 +123,53 @@ def createTables():
         DIVIDENDYIELD DECIMAL,
         FIVEYEARAVGDIVIDENDYIELD DECIMAL,
         ROE DECIMAL,
-        PRIMARY KEY(IDENTIFIER, STOCKEXCHANGE));'''  )
+        PRIMARY KEY(IDENTIFIER, STOCKEXCHANGE));''')
 
     initialized = True
+
 
 """
 Function for validating a dpuble in the form of a string
 If valid, returns the double value as a string, else returns NULL
 """
-def validateDouble(strParam):
-    global NULL
-    toReturn = NULL
 
+
+def validate_double(str_param):
+    global NULL
+
+    # noinspection PyBroadException
     try:
-        toReturn = str(float(strParam.replace(',',''))) #if any commas exist, remove them
-    except Exception as e: #exception occured, just return NULL
-        toReturn = NULL
-    return toReturn
+        to_return = str(float(str_param.replace(',', '')))  #if any commas exist, remove them
+    except Exception:  #exception occured, just return NULL
+        to_return = NULL
+    return to_return
+
 
 """
 Gets the date formatted as dd-mm-YYYY
 """
-def getDate(date):
+
+
+def get_date(date):
     global DATE_FORMAT
     return datetime.strptime(date, DATE_FORMAT)
+
+
 """
 Returns a look up table in the form of a dictionary
 Input: A list containing the headers
 Return: A dictionary containing corresponding indexes for each of the header values
 """
-def getLUTTable(list):
-    toReturn = dict()
 
-    for i in range(len(list)):
-        toReturn[list[i]] = i
 
-    return toReturn
+def get_lookup_table(param_list):
+    to_return = dict()
+
+    for i in range(len(param_list)):
+        to_return[param_list[i]] = i
+
+    return to_return
+
 
 """
 Gets the current dividend yield and the 5 year average yield of a given stock
@@ -162,118 +178,109 @@ Input parameters: 6 digit BSE stock code (identifier)
                   Price: Current price of the stock
                   Face Value: Current face value of the stock
 """
-def handleDividend(identifier, price, faceValue):
-    global DIVIDENDS, DATA, RECORDDATE, DIVIDENDPERCENTAGE, HEADER
+
+
+def handle_dividend(identifier, price, face_value):
+    global DIVIDENDS, DATA, RECORDDATE, DIVIDENDPERCENTAGE, HEADER, NULL
     data = b.corporate_actions(identifier)
-    endOfFinYr = datetime.now()
-    prevYearTotals = [0.0, 0.0, 0.0, 0.0, 0.0] #each of the previous 5 year slabs. This will contain dividend percentages
+    end_of_fin_yr = datetime.now()
+
+    # each of the previous 5 year slabs. This will contain dividend percentages
+    prev_yr_totals = [0.0, 0.0, 0.0, 0.0, 0.0]
+
     fiveyryield = NULL
     currentyield = NULL
 
     if DIVIDENDS in data:
         if DATA in data[DIVIDENDS]:
-            dictionary = getLUTTable(data[DIVIDENDS][HEADER]) #get the lookup table
+            dictionary = get_lookup_table(data[DIVIDENDS][HEADER])  #get the lookup table
             for i in data[DIVIDENDS][DATA]:
-                date = getDate(i[dictionary[RECORDDATE]]) #date of dividend issued
+                date = get_date(i[dictionary[RECORDDATE]])  #date of dividend issued
 
-                if date <= endOfFinYr and date > endOfFinYr - relativedelta(years=1):
-                    prevYearTotals[0] += float (i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
+                if end_of_fin_yr - relativedelta(years=1) < date <= end_of_fin_yr:
+                    prev_yr_totals[0] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
                     #dividend issued current year
-                elif date <= endOfFinYr - relativedelta(years=1) and date > endOfFinYr - relativedelta(years=2):
-                    prevYearTotals[1] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
+                elif end_of_fin_yr - relativedelta(years=2) < date <= end_of_fin_yr - relativedelta(years=1):
+                    prev_yr_totals[1] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
                     #dividend issued previous year
-                elif date <= endOfFinYr - relativedelta(years=2) and date > endOfFinYr - relativedelta(years=3):
-                    prevYearTotals[2] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
+                elif end_of_fin_yr - relativedelta(years=3) < date <= end_of_fin_yr - relativedelta(years=2):
+                    prev_yr_totals[2] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
                     #dividend issued two years ago
-                elif date <= endOfFinYr - relativedelta(years=3) and date > endOfFinYr - relativedelta(years=4):
-                    prevYearTotals[3] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
+                elif end_of_fin_yr - relativedelta(years=4) < date <= end_of_fin_yr - relativedelta(years=3):
+                    prev_yr_totals[3] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
                     #dividend issued three years ago
-                elif date <= endOfFinYr - relativedelta(years=4) and date > endOfFinYr - relativedelta(years=5):
-                    prevYearTotals[4] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
+                elif end_of_fin_yr - relativedelta(years=5) < date <= end_of_fin_yr - relativedelta(years=4):
+                    prev_yr_totals[4] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
                     #dividend issued four years ago
 
-            fiveyryield = sum(prevYearTotals) * float(faceValue) / (5.0 * float(price))  # five year yield returned as a percentage
-            currentyield = prevYearTotals[0] * float(faceValue) / float(price)  # current yield returned as a percentage
+            # five year yield returned as a percentage
+            fiveyryield = sum(prev_yr_totals) * float(face_value) / (5.0 * float(price))
+            currentyield = prev_yr_totals[0] * float(face_value) / float(price)  #current yield returned as a percentage
 
     return currentyield, fiveyryield
 
-"""
-Function for returning an SQL query
-Input: Array containing the relevant fields AS STRINGS
-The size of input array and the order of the fields must match the global array defined for field headers
-"""
-def getQuery(fields):
-    global companiesWithMissingInfo, HEADERS
-    assert (len(HEADERS) == len(fields))
-    missingInfo = False #boolean checking if company has any missing fields
-    for i in range(len(fields)):
-        if NULL in fields[i]: #missing info
-            stockAttributes[i] += 1
-            missingInfo = True
-
-    if missingInfo:
-        companiesWithMissingInfo += 1
-
-    return "INSERT INTO STOCKITEM VALUES ('"+ fields[0] + "', '"+ fields[1] + "', "+ fields[2]+ ', '+ fields[3] + ', '+ fields[4] + ', '+ fields[5] + ', '+ fields[6] + ', '+ fields[7] + ", '"+ fields[8] + "', '"+ fields[9] + "', "+ fields[10]+ ', '+ fields[11] + ', '+ fields[12] + ', '+ fields[13] + ', '+ fields[14] + ');'
 
 """
 Function for adding the details of a particular stock to the database
 Specifically for BSE stocks only
 Input: 6-digit BSE stock code
 """
-def insertBSEData(identifier):
-    global initialized, STOCKNAME, EPS, PE, INDUSTRY, ROE, VALUERATIO, PROFITRATIO, CRORE, CRORE_VAL, LAKH, LAKH_VAL, BOMBAYSTOCKEXCHANGE, b
-    global NULL, CHANGE, FACEVALUE, FIFTYTWOWEEKHIGH, FIFTYTWOWEEKLOW, STOCKPRICE, MARKETCAP, VALUE, IN, TABLE, SCRIPCD, conn
+
+
+def insert_bse_data(identifier):
+    global initialized, STOCKNAME, EPS, PE, INDUSTRY, ROE, VALUERATIO, PROFITRATIO, CRORE, CRORE_VAL, LAKH, LAKH_VAL
+    global BOMBAYSTOCKEXCHANGE, b, NULL, CHANGE, FACEVALUE, FIFTYTWOWEEKHIGH, FIFTYTWOWEEKLOW, STOCKPRICE, MARKETCAP
+    global VALUE, IN, TABLE, SCRIPCD, conn
 
     c = conn.cursor()
     stockexchange = BOMBAYSTOCKEXCHANGE
 
     c.execute('SELECT * FROM STOCKITEM WHERE IDENTIFIER = ? AND STOCKEXCHANGE = ?', (identifier, stockexchange,))
 
-    if initialized and len(c.fetchall()) == 0: #if tables have been created and stock item doesn't exist already in db
+    if initialized and len(c.fetchall()) == 0:  #if tables have been created and stock item doesn't exist already in db
         data = b.quote(identifier)
 
         change = NULL
         if CHANGE in data:
-            change = validateDouble(data[CHANGE])
+            change = validate_double(data[CHANGE])
 
-        faceValue = NULL
+        face_value = NULL
         if FACEVALUE in data:
-            faceValue = validateDouble(data[FACEVALUE])
+            face_value = validate_double(data[FACEVALUE])
 
-        fiftyTwoWeekHigh = NULL
+        fifty_two_week_high = NULL
         if FIFTYTWOWEEKHIGH in data:
-            fiftyTwoWeekHigh = str(data[FIFTYTWOWEEKHIGH])
+            fifty_two_week_high = str(data[FIFTYTWOWEEKHIGH])
 
-        fiftyTwoWeekLow = NULL
+        fifty_two_week_low = NULL
         if FIFTYTWOWEEKLOW in data:
-            fiftyTwoWeekLow = str(data[FIFTYTWOWEEKLOW])
+            fifty_two_week_low = str(data[FIFTYTWOWEEKLOW])
 
-        stockPrice = NULL
+        stock_price = NULL
         if STOCKPRICE in data:
-            stockPrice = validateDouble(data[STOCKPRICE])
+            stock_price = validate_double(data[STOCKPRICE])
 
-        marketCap = NULL
+        market_cap = NULL
         if MARKETCAP in data:
-            marketCap = validateDouble(data[MARKETCAP][VALUE])
-            if NULL not in marketCap:
+            market_cap = validate_double(data[MARKETCAP][VALUE])
+            if NULL not in market_cap:
                 if CRORE in data[MARKETCAP][IN]:
-                    marketCap = float(marketCap) * CRORE_VAL
+                    market_cap = float(market_cap) * CRORE_VAL
                 if LAKH in data[MARKETCAP][IN]:
-                    marketCap = float(marketCap) * LAKH_VAL
-        marketCap = str(marketCap)
+                    market_cap = float(market_cap) * LAKH_VAL
+        market_cap = str(market_cap)
 
-        stockName = NULL
+        stock_name = NULL
         if STOCKNAME in data:
-           stockName = data[STOCKNAME].replace('\'', '"')
+            stock_name = data[STOCKNAME].replace('\'', '"')
 
         fiveyryield = NULL
         currentyield = NULL
 
-        if NULL not in stockPrice and NULL not in faceValue:
-            list = handleDividend(identifier, stockPrice, faceValue)
-            currentyield = str(list[0])
-            fiveyryield = str(list[1])
+        if NULL not in stock_price and NULL not in face_value:
+            my_list = handle_dividend(identifier, stock_price, face_value)
+            currentyield = str(my_list[0])
+            fiveyryield = str(my_list[1])
 
         eps = NULL
         pe = NULL
@@ -281,20 +288,20 @@ def insertBSEData(identifier):
         roe = NULL
         data = b.ratios(identifier)
 
-        if PROFITRATIO in data: #attempt to get from ratios
+        if PROFITRATIO in data:  #attempt to get from ratios
             if PE in data[PROFITRATIO]:
                 pe = str(data[PROFITRATIO][PE])
             if EPS in data[PROFITRATIO]:
                 eps = str(data[PROFITRATIO][EPS])
         if VALUERATIO in data:
             if INDUSTRY in data[VALUERATIO]:
-                industry = str (data[VALUERATIO][INDUSTRY]).replace('\'', '"')
+                industry = str(data[VALUERATIO][INDUSTRY]).replace('\'', '"')
             if ROE in data[VALUERATIO]:
-               roe = str (data[VALUERATIO][ROE])
+                roe = str(data[VALUERATIO][ROE])
 
         data = b.peers(identifier)
 
-        if NULL in eps and TABLE in data and EPS in data[TABLE][0]: #eps still null
+        if NULL in eps and TABLE in data and EPS in data[TABLE][0]:  #eps still null
             if SCRIPCD in data[TABLE][0] and data[TABLE][0][SCRIPCD] == float(identifier):
                 eps = str(data[TABLE][0][EPS])
 
@@ -307,26 +314,28 @@ def insertBSEData(identifier):
             if len(c.fetchall()) == 0:
                 #insert
                 c.execute('INSERT INTO EXCHANGE VALUES (?, ?, ?)', (BOMBAYSTOCKEXCHANGE, INDIA, INR))
-        except Exception as e:
-            print (str(e))
+        except Exception as ex:
+            print(str(ex))
 
         c.execute('SELECT * FROM EXCHANGE WHERE EXCHANGENAME = ?', (stockexchange,))
         if len(c.fetchall()) != 0:
             #ensure table exists
-            query = getQuery([identifier, stockexchange, change, faceValue, fiftyTwoWeekHigh, fiftyTwoWeekLow, stockPrice, marketCap, stockName, industry, eps, pe, currentyield, fiveyryield, roe])
-            conn.execute(query);
 
-def printStats():
+            conn.execute("INSERT INTO STOCKITEM VALUES ('" + identifier + "', '" + stockexchange + "', " + change +
+                         ', ' + face_value + ', ' + fifty_two_week_high + ', ' + fifty_two_week_low + ', ' +
+                         stock_price + ', ' + market_cap + ", '" + stock_name + "', '" + industry + "', " +
+                         eps + ', ' + pe + ', ' + currentyield + ', ' + fiveyryield + ', ' + roe + ');')
+
+
+def print_stats():
     global conn, HEADERS
-    toPrint = ""
-
 
     c = conn.cursor()
     c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'STOCKITEM';")
 
     length = len(c.fetchall())
-    if length == 1: #table exists
-        toPrint = "Number of missing fields:\n"
+    if length == 1:  #table exists
+        to_print = "Number of missing fields:\n"
         c.execute("SELECT COUNT(*) FROM STOCKITEM;")
         result = c.fetchall()
         assert (len(result) == 1)
@@ -337,29 +346,54 @@ def printStats():
             result = c.fetchall()
             assert (len(result) == 1)
             count = result[0][0]
-            toPrint += (field + ": " + str(count) + "/" + str(size) +"\n")
-        print(toPrint)
+            to_print += (field + ": " + str(count) + "/" + str(size) + "\n")
+        print(to_print)
+
+
+def get_decimal_list(index):
+    global HEADERS
+
+    to_return = []
+    assert (index < len(HEADERS))
+    query = "SELECT * FROM STOCKITEM "
+
+    if len(index) > 0:
+        query += "WHERE "
+
+    dict_count = 0
+
+    for entry in index:
+        dict_count += 1
+        if entry in HEADERS:
+            query += ("NOT " + str(entry) + " IS ? AND NOT" + str(entry) + " IS NULL AND " + str(entry) + " BETWEEN " +
+                      str(index[entry][MIN]) + " AND " + str(index[entry][MAX]))
+            if dict_count == len(index):
+                query += " AND "
+    return to_return
+
 
 def main():
-    global companiesWithMissingInfo, missingFields, initialized, conn
-    companies = getBSECodes() #get list of companies
-    #createTables(conn) #create db tables
+    global initialized, conn
+    companies = get_bse_codes()  #get list of companies
+    #createTables(conn)  #create db tables
     initialized = True
-    if initialized: #proceed only if initialized
+    if initialized:  #proceed only if initialized
         progressbar = tqdm.tqdm(companies)
         for i in progressbar:
-            insertBSEData(i)
+            insert_bse_data(i)
             progressbar.set_description("Reading companies")
             conn.commit()
+
 
 try:
     #main(conn, c)
     pd.set_option('display.max_columns', None)
-    printStats()
+    print_stats()
     k = 11
     # c = conn.cursor()
 
-   # print(pd.read_sql_query("SELECT * FROM STOCKITEM WHERE NOT ? IS ? LIMIT 20", conn,None, True, ("FIVEYEARAVGDIVIDENDYIELD", None, )))
+    #print(pd.read_sql_query("SELECT * FROM STOCKITEM WHERE NOT ? IS ? LIMIT 20", conn,None, True,
+    # ("FIVEYEARAVGDIVIDENDYIELD", None, )))
 
     #print(len(c.fetchall()))
 except Exception as e:
