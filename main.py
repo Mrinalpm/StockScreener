@@ -6,6 +6,7 @@ import tqdm
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import pandas as pd
+import pprint
 
 #Global variables
 #User defined variables
@@ -388,12 +389,14 @@ def main():
 try:
     #main(conn, c)
     pd.set_option('display.max_columns', None)
-    print_stats()
+    #print_stats()
     k = 11
+
+
+    pprint.pprint(b.holdings(541154))
     # c = conn.cursor()
 
-    #print(pd.read_sql_query("SELECT * FROM STOCKITEM WHERE NOT ? IS ? LIMIT 20", conn,None, True,
-    # ("FIVEYEARAVGDIVIDENDYIELD", None, )))
+    #print(pd.read_sql_query("SELECT STOCKPRICE,MARKETCAP,STOCKNAME,DIVIDENDYIELD,FIVEYEARAVGDIVIDENDYIELD FROM STOCKITEM WHERE NOT FIVEYEARAVGDIVIDENDYIELD IS ? AND STOCKPRICE > 50 AND DIVIDENDYIELD > 4 ORDER BY FIVEYEARAVGDIVIDENDYIELD DESC LIMIT 20", conn,None, True,(None, )))
 
     #print(len(c.fetchall()))
 except Exception as e:
