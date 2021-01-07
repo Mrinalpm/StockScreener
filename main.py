@@ -5,30 +5,61 @@ import re
 import tqdm
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import json
 import pandas as pd
+import numpy as np
 import pprint
 
-#Global variables
-#User defined variables
+# Global variables
+# User defined variables
 
-#link at which companies are available
+# link at which companies are available
 stock_list_link = "https://s3.amazonaws.com/quandl-static-content/BSE%20Descriptions/stocks.txt"
 
-KEYWORD = '|BOM'  #delimiter when reading company names
-CRORE = "Cr"  #constant for crore
-LAKH = "Lakh"  #constant for lakh
-db = "companyData.db"  #name of database file
+KEYWORD = '|BOM'  # delimiter when reading company names
+CRORE = "Cr"  # constant for crore
+LAKH = "Lakh"  # constant for lakh
+db = "companyData.db"  # name of database file
 NULL = "NULL"
-BSE_CODE_DIGITS = 6  #number of digits in a BSE stock code
-DATE_FORMAT = "%d-%m-%Y"  #format of date used in bselib
+BSE_CODE_DIGITS = 6  # number of digits in a BSE stock code
+DATE_FORMAT = "%d-%m-%Y"  # format of date used in bselib
 
 BOMBAYSTOCKEXCHANGE = "BSE"
 INDIA = "INDIA"
 INR = "INR"
 
-#The following are fields (dictionary keys) that exist in the json when data is read using
-#the bselib. Dictionary values can be multi-level i.e. dictionaries within dictionaries and
-#hence, related variables are grouped accordingly
+# The following are fields (dictionary keys) that exist in the json when data is read using
+# the bselib. Dictionary values can be multi-level i.e. dictionaries within dictionaries and
+# hence, related variables are grouped accordingly
+
+DICT_KEY = "DICT_KEY"
+MULTI_VALUE = "MULTI_VALUE"
+
+quote_dict = {
+    "CHANGE": {DICT_KEY: 'change', MULTI_VALUE: False},
+    "DAYS_HIGH": {DICT_KEY: 'daysHigh', MULTI_VALUE: False},
+    "DAYS_LOW": {DICT_KEY: 'daysLow', MULTI_VALUE: False},
+    "FACE_VALUE": {DICT_KEY: 'faceValue', MULTI_VALUE: False},
+    "FIFTY_TWO_WEEK_HIGH": {DICT_KEY: 'fiftytwo_WeekHigh', MULTI_VALUE: False},
+    "FIFTY_TWO_WEEK_LOW": {DICT_KEY: 'fiftytwo_WeekLow', MULTI_VALUE: False},
+    "FREE_FLOAT": {DICT_KEY: 'freeFloat', MULTI_VALUE: True},
+    "GROUP": {DICT_KEY: 'group', MULTI_VALUE: False},
+    "INDEX": {DICT_KEY: 'index', MULTI_VALUE: False},
+    "LAST_OPEN": {DICT_KEY: 'lastOpen', MULTI_VALUE: False},
+    "LTD": {DICT_KEY: 'ltd', MULTI_VALUE: False},
+    "MARKET_CAP": {DICT_KEY: 'mktCap', MULTI_VALUE: False},
+    "MONTH_HIGH_LOW": {DICT_KEY: 'monthHighLow', MULTI_VALUE: False},
+    "PRICE_CHANGE": {DICT_KEY: 'pChange', MULTI_VALUE: False},
+    "PREVIOUS_CLOSE": {DICT_KEY: 'previousClose', MULTI_VALUE: False},
+    "SCRIPT_CODE": {DICT_KEY: 'scriptCode', MULTI_VALUE: False},
+    "SECURITY_ID": {DICT_KEY: 'securityId', MULTI_VALUE: False},
+    "STOCK_NAME": {DICT_KEY: 'stockName', MULTI_VALUE: False},
+    "STOCK_PRICE": {DICT_KEY: 'stockPrice', MULTI_VALUE: False},
+    "TOTAL_TRADED_QUANTITY": {DICT_KEY: 'totalTradedQty', MULTI_VALUE: True},
+    "TOTAL_TRADED_VALUE": {DICT_KEY: 'totalTradedValue', MULTI_VALUE: True},
+    "TWO_WEEK_AVERAGE_QUANTITY": {DICT_KEY: 'twoWeekAvgQty', MULTI_VALUE: True},
+    "WEIGHTED_AVERAGE_PRICE": {DICT_KEY: 'wtdAvgPrice', MULTI_VALUE: True}
+}
 
 CHANGE = "change"
 FACEVALUE = "faceValue"
@@ -58,22 +89,25 @@ SCRIPCD = 'scrip_cd'
 
 HEADERS = ["IDENTIFIER", "STOCKEXCHANGE", "CHANGE", "FACEVALUE", "FIFTYTWOWEEKHIGH", "FIFTYTWOWEEKLOW", "STOCKPRICE",
            "MARKETCAP", "STOCKNAME", "INDUSTRY", "EPS", "PE", "DIVIDENDYIELD", "FIVEYEARAVGDIVIDENDYIELD", "ROE"]
-#Column names of the stockitem table in the db
+# Column names of the stockitem table in the db
 
-#Dictionary keys when running a query
+# Dictionary keys when running a query
 MIN = "Min"
 MAX = "Max"
 
-#----------------------------------------------------------------------------------------------------------------------#
-#Program variables
-full_pattern = re.compile('1234567890.')  #number pattern
+# ----------------------------------------------------------------------------------------------------------------------#
+# Program variables
+full_pattern = re.compile('1234567890.')  # number pattern
 
-CRORE_VAL = 10000000  #value of one crore
-LAKH_VAL = 100000  #value of one lakh
+CRORE_VAL = 10000000  # value of one crore
+LAKH_VAL = 100000  # value of one lakh
 
-b = BSE()  #instance of BSE
-initialized = False  #initialization of db tables, initially false
+b = BSE()  # instance of BSE
+initialized = False  # initialization of db tables, initially false
 conn = sqlite3.connect(db)
+
+
+temp_dict = dict()
 
 """
 Function for getting 6 digit codes from the BSE
@@ -83,51 +117,14 @@ Returns list containing codes
 
 def get_bse_codes():
     global BSE_CODE_DIGITS, stock_list_link, KEYWORD
-    to_return = []  #list to be returned
-    data = requests.get(stock_list_link).text.splitlines()  #get data as array of lines
+    to_return = []  # list to be returned
+    data = requests.get(stock_list_link).text.splitlines()  # get data as array of lines
     for i in data:
         if KEYWORD in i:
-            to_add = i.split(KEYWORD)[1]  #the 6-digit code
+            to_add = i.split(KEYWORD)[1]  # the 6-digit code
             if len(to_add) == BSE_CODE_DIGITS:
                 to_return.append(to_add)
     return to_return
-
-
-"""
-Function for creating database tables
-Called when initializing the database
-global initialized will be set to true if table creation was successful
-"""
-
-
-def create_tables():
-    global initialized, conn
-
-    conn.execute('''CREATE TABLE EXCHANGE
-        (EXCHANGENAME TEXT PRIMARY KEY   NOT NULL,
-        COUNTRY     TEXT,
-        CURRENCY    TEXT);''')
-
-    conn.execute('''CREATE TABLE STOCKITEM
-        (IDENTIFIER TEXT,
-        STOCKEXCHANGE TEXT,
-        CHANGE DECIMAL,
-        FACEVALUE DECIMAL,
-        FIFTYTWOWEEKHIGH DECIMAL,
-        FIFTYTWOWEEKLOW DECIMAL,
-        STOCKPRICE DECIMAL,
-        MARKETCAP DECIMAL,
-        STOCKNAME TEXT,
-        INDUSTRY TEXT,
-        EPS DECIMAL,
-        PE DECIMAL,
-        DIVIDENDYIELD DECIMAL,
-        FIVEYEARAVGDIVIDENDYIELD DECIMAL,
-        ROE DECIMAL,
-        PRIMARY KEY(IDENTIFIER, STOCKEXCHANGE));''')
-
-    initialized = True
-
 
 """
 Function for validating a dpuble in the form of a string
@@ -140,8 +137,8 @@ def validate_double(str_param):
 
     # noinspection PyBroadException
     try:
-        to_return = str(float(str_param.replace(',', '')))  #if any commas exist, remove them
-    except Exception:  #exception occured, just return NULL
+        to_return = str(float(str_param.replace(',', '')))  # if any commas exist, remove them
+    except Exception:  # exception occured, just return NULL
         to_return = NULL
     return to_return
 
@@ -194,210 +191,125 @@ def handle_dividend(identifier, price, face_value):
 
     if DIVIDENDS in data:
         if DATA in data[DIVIDENDS]:
-            dictionary = get_lookup_table(data[DIVIDENDS][HEADER])  #get the lookup table
+            dictionary = get_lookup_table(data[DIVIDENDS][HEADER])  # get the lookup table
             for i in data[DIVIDENDS][DATA]:
-                date = get_date(i[dictionary[RECORDDATE]])  #date of dividend issued
+                date = get_date(i[dictionary[RECORDDATE]])  # date of dividend issued
 
                 if end_of_fin_yr - relativedelta(years=1) < date <= end_of_fin_yr:
                     prev_yr_totals[0] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
-                    #dividend issued current year
+                    # dividend issued current year
                 elif end_of_fin_yr - relativedelta(years=2) < date <= end_of_fin_yr - relativedelta(years=1):
                     prev_yr_totals[1] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
-                    #dividend issued previous year
+                    # dividend issued previous year
                 elif end_of_fin_yr - relativedelta(years=3) < date <= end_of_fin_yr - relativedelta(years=2):
                     prev_yr_totals[2] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
-                    #dividend issued two years ago
+                    # dividend issued two years ago
                 elif end_of_fin_yr - relativedelta(years=4) < date <= end_of_fin_yr - relativedelta(years=3):
                     prev_yr_totals[3] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
-                    #dividend issued three years ago
+                    # dividend issued three years ago
                 elif end_of_fin_yr - relativedelta(years=5) < date <= end_of_fin_yr - relativedelta(years=4):
                     prev_yr_totals[4] += float(i[dictionary[DIVIDENDPERCENTAGE]].replace('%', ''))
-                    #dividend issued four years ago
+                    # dividend issued four years ago
 
             # five year yield returned as a percentage
             fiveyryield = sum(prev_yr_totals) * float(face_value) / (5.0 * float(price))
-            currentyield = prev_yr_totals[0] * float(face_value) / float(price)  #current yield returned as a percentage
+            currentyield = prev_yr_totals[0] * float(face_value) / float(
+                price)  # current yield returned as a percentage
 
     return currentyield, fiveyryield
 
-
-"""
-Function for adding the details of a particular stock to the database
-Specifically for BSE stocks only
-Input: 6-digit BSE stock code
-"""
-
-
-def insert_bse_data(identifier):
-    global initialized, STOCKNAME, EPS, PE, INDUSTRY, ROE, VALUERATIO, PROFITRATIO, CRORE, CRORE_VAL, LAKH, LAKH_VAL
-    global BOMBAYSTOCKEXCHANGE, b, NULL, CHANGE, FACEVALUE, FIFTYTWOWEEKHIGH, FIFTYTWOWEEKLOW, STOCKPRICE, MARKETCAP
-    global VALUE, IN, TABLE, SCRIPCD, conn
-
-    c = conn.cursor()
-    stockexchange = BOMBAYSTOCKEXCHANGE
-
-    c.execute('SELECT * FROM STOCKITEM WHERE IDENTIFIER = ? AND STOCKEXCHANGE = ?', (identifier, stockexchange,))
-
-    if initialized and len(c.fetchall()) == 0:  #if tables have been created and stock item doesn't exist already in db
-        data = b.quote(identifier)
-
-        change = NULL
-        if CHANGE in data:
-            change = validate_double(data[CHANGE])
-
-        face_value = NULL
-        if FACEVALUE in data:
-            face_value = validate_double(data[FACEVALUE])
-
-        fifty_two_week_high = NULL
-        if FIFTYTWOWEEKHIGH in data:
-            fifty_two_week_high = str(data[FIFTYTWOWEEKHIGH])
-
-        fifty_two_week_low = NULL
-        if FIFTYTWOWEEKLOW in data:
-            fifty_two_week_low = str(data[FIFTYTWOWEEKLOW])
-
-        stock_price = NULL
-        if STOCKPRICE in data:
-            stock_price = validate_double(data[STOCKPRICE])
-
-        market_cap = NULL
-        if MARKETCAP in data:
-            market_cap = validate_double(data[MARKETCAP][VALUE])
-            if NULL not in market_cap:
-                if CRORE in data[MARKETCAP][IN]:
-                    market_cap = float(market_cap) * CRORE_VAL
-                if LAKH in data[MARKETCAP][IN]:
-                    market_cap = float(market_cap) * LAKH_VAL
-        market_cap = str(market_cap)
-
-        stock_name = NULL
-        if STOCKNAME in data:
-            stock_name = data[STOCKNAME].replace('\'', '"')
-
-        fiveyryield = NULL
-        currentyield = NULL
-
-        if NULL not in stock_price and NULL not in face_value:
-            my_list = handle_dividend(identifier, stock_price, face_value)
-            currentyield = str(my_list[0])
-            fiveyryield = str(my_list[1])
-
-        eps = NULL
-        pe = NULL
-        industry = NULL
-        roe = NULL
-        data = b.ratios(identifier)
-
-        if PROFITRATIO in data:  #attempt to get from ratios
-            if PE in data[PROFITRATIO]:
-                pe = str(data[PROFITRATIO][PE])
-            if EPS in data[PROFITRATIO]:
-                eps = str(data[PROFITRATIO][EPS])
-        if VALUERATIO in data:
-            if INDUSTRY in data[VALUERATIO]:
-                industry = str(data[VALUERATIO][INDUSTRY]).replace('\'', '"')
-            if ROE in data[VALUERATIO]:
-                roe = str(data[VALUERATIO][ROE])
-
-        data = b.peers(identifier)
-
-        if NULL in eps and TABLE in data and EPS in data[TABLE][0]:  #eps still null
-            if SCRIPCD in data[TABLE][0] and data[TABLE][0][SCRIPCD] == float(identifier):
-                eps = str(data[TABLE][0][EPS])
-
-        if NULL in pe and TABLE in data and PE in data[TABLE][0]:
-            if SCRIPCD in data[TABLE][0] and data[TABLE][0][SCRIPCD] == float(identifier):
-                pe = str(data[TABLE][0][PE])
-
-        try:
-            c.execute('SELECT * FROM EXCHANGE WHERE EXCHANGENAME = ?', (stockexchange,))
-            if len(c.fetchall()) == 0:
-                #insert
-                c.execute('INSERT INTO EXCHANGE VALUES (?, ?, ?)', (BOMBAYSTOCKEXCHANGE, INDIA, INR))
-        except Exception as ex:
-            print(str(ex))
-
-        c.execute('SELECT * FROM EXCHANGE WHERE EXCHANGENAME = ?', (stockexchange,))
-        if len(c.fetchall()) != 0:
-            #ensure table exists
-
-            conn.execute("INSERT INTO STOCKITEM VALUES ('" + identifier + "', '" + stockexchange + "', " + change +
-                         ', ' + face_value + ', ' + fifty_two_week_high + ', ' + fifty_two_week_low + ', ' +
-                         stock_price + ', ' + market_cap + ", '" + stock_name + "', '" + industry + "', " +
-                         eps + ', ' + pe + ', ' + currentyield + ', ' + fiveyryield + ', ' + roe + ');')
-
-
-def print_stats():
-    global conn, HEADERS
-
-    c = conn.cursor()
-    c.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'STOCKITEM';")
-
-    length = len(c.fetchall())
-    if length == 1:  #table exists
-        to_print = "Number of missing fields:\n"
-        c.execute("SELECT COUNT(*) FROM STOCKITEM;")
-        result = c.fetchall()
-        assert (len(result) == 1)
-        size = result[0][0]
-        for field in HEADERS:
-            query = "SELECT COUNT(*) FROM STOCKITEM WHERE " + field + " IS ? OR " + field + " IS ?;"
-            c.execute(query, (None, "NULL",))
-            result = c.fetchall()
-            assert (len(result) == 1)
-            count = result[0][0]
-            to_print += (field + ": " + str(count) + "/" + str(size) + "\n")
-        print(to_print)
-
-
-def get_decimal_list(index):
-    global HEADERS
-
-    to_return = []
-    assert (index < len(HEADERS))
-    query = "SELECT * FROM STOCKITEM "
-
-    if len(index) > 0:
-        query += "WHERE "
-
-    dict_count = 0
-
-    for entry in index:
-        dict_count += 1
-        if entry in HEADERS:
-            query += ("NOT " + str(entry) + " IS ? AND NOT" + str(entry) + " IS NULL AND " + str(entry) + " BETWEEN " +
-                      str(index[entry][MIN]) + " AND " + str(index[entry][MAX]))
-            if dict_count == len(index):
-                query += " AND "
-    return to_return
-
-
 def main():
-    global initialized, conn
-    companies = get_bse_codes()  #get list of companies
-    #createTables(conn)  #create db tables
-    initialized = True
-    if initialized:  #proceed only if initialized
-        progressbar = tqdm.tqdm(companies)
-        for i in progressbar:
-            insert_bse_data(i)
-            progressbar.set_description("Reading companies")
-            conn.commit()
+    companies = get_bse_codes()  # get list of companies
 
+    QUOTE = "quote"
+
+    HISTORICAL_FINANCIAL_STATEMENT = "historical_financial_statement"
+    FINANCIAL_STATEMENT = "financial_statement"
+    STATEMENT_ANALYSIS = "statement_analysis"
+    BALANCE_SHEET = "balancesheet"
+    YOY_RESULTS = "yoy_results"
+    QUARTER_RESULTS = "quarter_results"
+    CASHFLOW = "cashflow"
+
+    PERFORMANCE_ANALYSIS = "performance_analysis"
+
+    FINANCIAL_RATIOS = "financial_ratios"
+
+    PEER_COMPARISON = "peer_comparison"
+
+    CORPORATE_ACTIONS = "corporate_actions"
+
+    HOLDING_INFO_ANALYSIS = "shareholding_info_and_analysis"
+
+    progressbar = tqdm.tqdm(companies)
+    count = 0
+    for i in progressbar:
+        main_dict = dict()
+        if i not in temp_dict:
+
+            main_dict[QUOTE] = b.quote(i)
+
+            """main_dict[FINANCIAL_STATEMENT] = {}
+            main_dict[FINANCIAL_STATEMENT][BALANCE_SHEET] = b.statement(i, stats=BALANCE_SHEET)
+            main_dict[FINANCIAL_STATEMENT][YOY_RESULTS] = b.statement(i, stats=YOY_RESULTS)
+            main_dict[FINANCIAL_STATEMENT][QUARTER_RESULTS] = b.statement(i, stats=QUARTER_RESULTS)
+            main_dict[FINANCIAL_STATEMENT][CASHFLOW] = b.statement(i, stats=CASHFLOW)
+
+            main_dict[HISTORICAL_FINANCIAL_STATEMENT] = {}
+
+            main_dict[HISTORICAL_FINANCIAL_STATEMENT][BALANCE_SHEET] = b.historical_stats(i, stats=BALANCE_SHEET)
+            main_dict[HISTORICAL_FINANCIAL_STATEMENT][YOY_RESULTS] = b.historical_stats(i, stats=YOY_RESULTS)
+            main_dict[HISTORICAL_FINANCIAL_STATEMENT][QUARTER_RESULTS] = b.historical_stats(i, stats=QUARTER_RESULTS)
+            main_dict[HISTORICAL_FINANCIAL_STATEMENT][CASHFLOW] = b.historical_stats(i, stats=CASHFLOW)
+
+            main_dict[STATEMENT_ANALYSIS] = {}
+            main_dict[STATEMENT_ANALYSIS][BALANCE_SHEET] = b.stmt_analysis(i, stats=BALANCE_SHEET)
+            main_dict[STATEMENT_ANALYSIS][YOY_RESULTS] = b.stmt_analysis(i, stats=YOY_RESULTS)
+            main_dict[STATEMENT_ANALYSIS][QUARTER_RESULTS] = b.stmt_analysis(i, stats=QUARTER_RESULTS)
+            main_dict[STATEMENT_ANALYSIS][CASHFLOW] = b.stmt_analysis(i, stats=CASHFLOW)"""
+
+            main_dict[PERFORMANCE_ANALYSIS] = b.analysis(i)
+
+            main_dict[FINANCIAL_RATIOS] = b.ratios(i)
+
+            main_dict[PEER_COMPARISON] = b.peers(i)
+
+            main_dict[CORPORATE_ACTIONS] = b.corporate_actions(i)
+
+            main_dict[HOLDING_INFO_ANALYSIS] = b.holdings(i)
+
+        temp_dict[i] = main_dict
+
+        count +=1
+
+        if  count % 10 == 0:
+            write_to_file()
+            count = 0
+        progressbar.set_description("Reading companies")
+
+def write_to_file():
+    # Open a file: file
+    file = open('result.json', mode='r')
+
+    # read all lines at once
+    all_of_it = file.read()
+
+    # close the file
+    file.close()
+
+    open('result.json', 'w').close()
+    try:
+        with open('result.json', 'w') as fp:
+            json.dump(temp_dict, fp, allow_nan=True)
+        fp.close()
+    except Exception:
+        with open('result.json', 'w') as fp:
+            fp.write(all_of_it)
+        fp.close()
 
 try:
-    #main(conn, c)
-    pd.set_option('display.max_columns', None)
-    #print_stats()
-    k = 11
-
-
-    pprint.pprint(b.holdings(541154))
-    # c = conn.cursor()
-
-    #print(pd.read_sql_query("SELECT STOCKPRICE,MARKETCAP,STOCKNAME,DIVIDENDYIELD,FIVEYEARAVGDIVIDENDYIELD FROM STOCKITEM WHERE NOT FIVEYEARAVGDIVIDENDYIELD IS ? AND STOCKPRICE > 50 AND DIVIDENDYIELD > 4 ORDER BY FIVEYEARAVGDIVIDENDYIELD DESC LIMIT 20", conn,None, True,(None, )))
-
-    #print(len(c.fetchall()))
+     main()
+     write_to_file()
 except Exception as e:
     print(str(e))
+    write_to_file()
