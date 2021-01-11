@@ -35,14 +35,15 @@ foreign investors, promoters, non institution, others)
 
 The fetched data is stored in a json file after which, an excel spreadsheet can be generated. These file names can be specified as indicated below:
 
-img1
+![img1](https://user-images.githubusercontent.com/55770671/104220254-d8de9400-5404-11eb-8043-36845d4fa96f.PNG)
 
 Due to the amount of data involved, the screener can't run in real-time. Instead, it first fetches data and stores data in the json file. After this, the screener is run and the spreadsheet can be generated based on the data from the json.
 
 Once the spreadsheet is generated, the data can be analyzed for shortlisting companies. Here is a sample screenshot of the spreadsheet:
 
-img2
-img3
+![img2](https://user-images.githubusercontent.com/55770671/104220339-f875bc80-5404-11eb-893a-e612910cc5e5.PNG)
+
+![img3](https://user-images.githubusercontent.com/55770671/104220344-f9a6e980-5404-11eb-81ab-3d0fccda6ee2.PNG)
 
 If data couldn't be retrieved for a certain field, a **NULL** value is entered in that cell.
 
