@@ -11,10 +11,10 @@ This analyzer stands out due to the following features:
 
 	A good company to invest in can also be determined based on its shareholding pattern. I concluded that a higher shareholding % by mutual funds and insurance companies is generally indicative of a good company to invest in. This analyzer provides the complete shareholding pattern including mutual fund, insurance companies, foreign investors and non-institutional shareholding patterns.
 	
-## More about the screener
+## More about this tool
 The script uses **bselib**, an API for fetching BSE stock data. Documentation can be found [here](https://bselib.readthedocs.io/en/latest/). 
 
-The screener fetches the following data:
+The analyzer fetches the following data:
 * 6 digit BSE stock code
 * Stock Name
 * Stock Price
