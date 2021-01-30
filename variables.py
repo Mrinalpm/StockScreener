@@ -31,6 +31,7 @@ FINANCIAL_RATIOS = "financial_ratios"
 PEER_COMPARISON = "peer_comparison"
 CORPORATE_ACTIONS = "corporate_actions"
 HOLDING_INFO_ANALYSIS = "shareholding_info_and_analysis"
+INDEX = 'index'
 
 #----------------------------------------------------------------------------------------------------------------------#
 #The following are dictionary keys present. This is what's present in the data from bselib
@@ -86,7 +87,7 @@ HOLDING_INFO_ANALYSIS_PERC = 'perc'
 #Column headers in the excel file
 headers = ["Stock Code", "Name", "Price", "% change", "52 Week High", "52 Low High",
            "Month High/Low", "Face Value", "Market Cap", "P/E", "EPS",
-           "CEPS", "ROE", "Dividend Yield", "5 year avg. div. yield",
+           "CEPS", "ROE", "Index", "Dividend Yield", "5 year avg. div. yield",
            "Mutual Fund shareholding %", "Insurance companies shareholding %", "Foreign Investors shareholding %",
            "Promoters shareholding %", "Other shareholding %", "Non-institution shareholding %"
            , "Other DIIs shareholding %"]
