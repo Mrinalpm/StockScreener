@@ -6,11 +6,18 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import xlsxwriter
 from variables import *
+from anytree import Node, RenderTree
+import xlwt
+from openpyxl import Workbook
+import csv
+import itertools
+import sys
 
 #Script for generating a csv file of BSE stocks.
 #Can also be used to scrape stock data from various sources (refer to bselib)
 # ---------------------------------------------------------------------------------------------------------------------#
 
+global_node_dict = {0: ('root', -1)}
 data_dict = dict()  #dictionary in which all data will be stored
 
 """
@@ -192,15 +199,83 @@ def init():
         print(str(e))
 
 """
+Function for forming a tree of the different headers
+Return: Total number of data headers
+"""
+def getHeadersAsTree(parent_node, data_dict, parent_id, node_dict, node_counter):
+    count = 0
+    node_counter_copy = node_counter
+    for key in data_dict:
+        if str(key) != "__len__":
+            my_node = Node(key, parent=parent_node)
+            node_dict[node_counter_copy] = (key, parent_id)
+            curr_node_id = node_counter_copy
+            node_counter_copy += 1
+            count += 1
+            if isinstance(data_dict[key], dict):
+                count += getHeadersAsTree(my_node, data_dict[key], curr_node_id, node_dict, node_counter_copy)
+            if isinstance(data_dict[key], list):
+                for i in range(len(data_dict[key])):
+                    my_node_entry = Node(i, parent = my_node)
+                    node_dict[node_counter_copy] = (i, curr_node_id)
+                    node_counter_copy += 1
+                    count += 1
+    return count
+
+"""
+Function for creating excel file from given data. This includes ALL fields from the data
+"""
+def get_data_all():
+    populate_headers()
+
+def populate_headers():
+    global global_node_dict
+    count = 0
+    parent = Node(' Name')
+
+    temp = tqdm.tqdm(data_dict)
+
+    for entry in temp:
+        temp_parent = Node(str(' Name'))
+        my_data = data_dict[entry]
+        temp_node_dict = {0: (' Name', -1)}
+        temp_count = getHeadersAsTree(temp_parent, my_data, 0, temp_node_dict, 1)
+
+        if temp_count > count:
+            parent = temp_parent
+            count = temp_count
+            global_node_dict = temp_node_dict
+
+    fin_output = ""
+    for pre, fill, node in RenderTree(parent):
+        temp_str = "%s%s" % (pre, node.name)
+        fin_output += (temp_str + "\n")
+
+    my_list = fin_output.split("\n")
+    create_spreadsheet(my_list[:-1])
+
+def create_spreadsheet(my_list):
+    wb = Workbook()
+
+    # grab the active worksheet
+    ws = wb.active
+
+    for index in range(len(my_list)):
+        row = str(my_list[index]).count("│") + 1
+        ws.cell(row=row, column=index+1).value = str(my_list[index])[my_list[index].rindex(" ") + 1 :]
+    wb.save(excel_file_name)
+
+"""
 Function for creating excel file from given data
 """
 def get_data():
+    workbook = Workbook()
 
-    workbook = xlsxwriter.Workbook(excel_file_name)
-    worksheet = workbook.add_worksheet()
+    # grab the active worksheet
+    worksheet = workbook.active
 
     for col_num, dat in enumerate(headers):
-        worksheet.write(0, col_num, dat)
+        worksheet.cell(row=1, column=col_num + 1).value = dat
 
     count = 1
     for i in data_dict:
@@ -489,17 +564,17 @@ def get_data():
                                 myArray.append(float(validate_double(temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_OTHER_DIIS][HOLDING_INFO_ANALYSIS_PERC].replace('%', ''))))
 
             for col_num, dat in enumerate(myArray):
-                worksheet.write(count, col_num, dat)
+                worksheet.cell(row=count+1, column=col_num + 1).value = dat
 
             count += 1
 
         except Exception as e:
             print(str(e) + " " + i)
-            workbook.close()
 
-    workbook.close()
+    workbook.save(excel_file_name)
 
 #CALL store_data ONLY IF LATEST DATA IS REQUIRED. THIS PROCESS CAN TAKE UP TO 24 HOURS
 #store_data()
 init()
-get_data()
+#get_data()
+get_data_all();
