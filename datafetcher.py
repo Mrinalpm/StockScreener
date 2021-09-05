@@ -4,20 +4,16 @@ import tqdm
 import json
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-import xlsxwriter
 from variables import *
 from anytree import Node, RenderTree
-import xlwt
 from openpyxl import Workbook
-import csv
-import itertools
-import sys
 
 #Script for generating a csv file of BSE stocks.
 #Can also be used to scrape stock data from various sources (refer to bselib)
 # ---------------------------------------------------------------------------------------------------------------------#
 
 global_node_dict = {0: ('root', -1)}
+
 data_dict = dict()  #dictionary in which all data will be stored
 
 """
