@@ -1,67 +1,94 @@
-from bselib.bse import BSE
-import requests
-import tqdm
-import json
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
+import csv
+import os
+import sys
 from variables import *
-from anytree import Node, RenderTree
-from openpyxl import Workbook
-
-#Script for generating a csv file of BSE stocks.
-#Can also be used to scrape stock data from various sources (refer to bselib)
-# ---------------------------------------------------------------------------------------------------------------------#
-
-global_node_dict = {0: ('root', -1)}
-
-data_dict = dict()  #dictionary in which all data will be stored
+from bselib.bse import BSE
+import json
+import tqdm
+import matplotlib.pyplot as plt
+import openpyxl
 
 """
-Function for getting 6 digit codes from the BSE
-Returns list containing codes
+Block 1 variables
+"""
+bse_codes = []
+
+#----------------------------------------------------------------------------------------------------------
+"""
+Block 3 variables
+"""
+dict_containing_company_data = dict()
+
+dict_containing_spreadsheet_headers_with_indexes = dict()
+
+dict_containing_spreadsheet_headers = dict()
+
+#The number of the right-most column. Will be updated when block 3 functions are called.
+end_col = 0
+
+list_with_headers_as_keys = []
+
+#----------------------------------------------------------------------------------------------------------
+"""
+Block 1 functions
+"""
+
+"""
+Purpose: To get the 6-digit BSE codes and store it in a global list
+
+Prerequisites:
+    * CSV file "active_equities_file_name" is up-to-date and existent in local directory.
+    * "active_equities_file_name" contains BSE codes in column number column_number_containing_bse_codes
+
+Updates:
+    * Global variable "bse_codes" with all active equity codes.
 """
 def get_bse_codes():
-    to_return = []  # list to be returned
     try:
-        data = requests.get(stock_list_link).text.splitlines()  # get data as array of lines
-        for i in data:
-            if KEYWORD in i:
-                to_add = i.split(KEYWORD)[1]  # the 6-digit code
-                if len(to_add) == BSE_CODE_DIGITS:
-                    to_return.append(to_add)
-    except Exception:
-        #read from backup file
-        f = open(stock_list_file, "r")
-        data = f.read().splitlines()
-        for i in data:
-            if KEYWORD in i:
-                to_add = i.split(KEYWORD)[1]  # the 6-digit code
-                if len(to_add) == BSE_CODE_DIGITS:
-                    to_return.append(to_add)
-    return to_return
+        csv_file = open(active_equities_file_name,'r')
+
+        csv_file.readline()
+
+        for a in csv.reader(csv_file, delimiter=','):
+            bse_codes.append(a[column_number_containing_bse_codes-1])
+
+    except FileNotFoundError as e:
+        print("There is no file named " + active_equities_file_name + " at " + os.getcwd())
+        sys.exit(1)
+    except OSError:
+        print("Could not open/read file: " +  os.getcwd() + active_equities_file_name)
+        sys.exit(1)
+    except Exception as err:
+        print(f"Unexpected error opening {active_equities_file_name} is",repr(err))
+        sys.exit(1)  # or replace this with "raise" ?
+
+#----------------------------------------------------------------------------------------------------------
+"""
+Block 2 functions
+"""
 
 """
-Fetches relevant data of companies and stores in json file.
-Can take up to 24 hrs
-NOTE: THIS WILL ERASE DATA ALREADY PRESENT IN EXISTING JSON FILE
+Purpose: To get company data using bselib and store it in a file. THIS MAY TAKE A VERY LONG TIME
+
+Prerequisites:
+    * get_bse_codes()
+    * All dictionary keys as described in variables.py matches what is returned by bselib
+
+Creates:
+    * "json_file_containing_data" containing company data
 """
-def store_data():
-    global data_dict
-
-    companies = get_bse_codes()  # get list of companies
-
-    progressbar = tqdm.tqdm(companies)
-
-    count = 0
-
+def create_json_data():
     try:
-
-        write_to_file() # clear contents (write an empty dict)
+        progressbar = tqdm.tqdm(bse_codes)
         b = BSE()
+        data_dict = dict()
+        count = 0
+
         for i in progressbar:
             local_dict = dict()
 
-            if i not in data_dict: #fetch data only if company isn't present
+            if i not in data_dict:
+
                 local_dict[QUOTE] = b.quote(i)
 
                 local_dict[PERFORMANCE_ANALYSIS] = b.analysis(i)
@@ -78,499 +105,379 @@ def store_data():
 
                 count += 1
 
-                if count % 10 == 0:  #periodically write to file
-                    write_to_file()
+                if count % company_data_write_frequency == 0:  #periodically write to file
+
+                    file = open(json_file_containing_data, mode='w+')
+
+                    all_of_it = file.read()
+
+                    # close the file
+                    file.close()
+
+                    open(json_file_containing_data, 'w').close() #clear
+                    try:
+                        with open(json_file_containing_data, 'w') as fp:
+                            json.dump(data_dict, fp, allow_nan=True)
+                        fp.close()
+                    except Exception: #something went wrong, restore old data
+                        with open(json_file_containing_data, 'w') as fp:
+                            fp.write(all_of_it)
+                        fp.close()
+
                     count = 0
                 progressbar.set_description("Reading companies")
-
+            
     except Exception as e:
         print(str(e))
 
+#----------------------------------------------------------------------------------------------------------
+"""
+Block 3 functions
+"""
 
 """
-Write json company data to file
+Purpose: To read company data from a .json file into the global dict
+
+Prerequisites:
+    * The file named "json_file_containing_data" must contain valid company data
+
+Updates:
+    * Global dictionary "dict_containing_company_data" eith full company data
 """
-def write_to_file():
-    global data_dict
-
-    # Open a file: file
-    file = open(file_name, mode='r')
-
-    # read all lines at once
-    all_of_it = file.read()
-
-    # close the file
-    file.close()
-
-    open(file_name, 'w').close() #clear
+def read_from_json_file():
+    global dict_containing_company_data
     try:
-        with open(file_name, 'w') as fp:
-            json.dump(data_dict, fp, allow_nan=True)
-        fp.close()
-    except Exception: #something went wrong, restore old data
-        with open(file_name, 'w') as fp:
-            fp.write(all_of_it)
-        fp.close()
-
-"""
-Function for validating a float as a string
-Returns NULL if invalid
-"""
-def validate_double(str_param):
-
-    str_param = str(str_param)
-    # noinspection PyBroadException
-    try:
-        to_return = str(float(str_param.replace(',', '')))  # if any commas exist, remove them
-    except Exception:  # exception occured, just return NULL
-        to_return = "NULL"
-    return to_return
-
-def get_date(date):
-    return datetime.strptime(date, date_format)
-
-"""
-Function to get current yield and 5 year average yield
-"""
-def handle_dividend(price, face_value, div_data):
-    end_of_fin_yr = datetime.now()
-
-    # each of the previous 5 year slabs. This will contain dividend percentages
-    prev_yr_totals = [0.0, 0.0, 0.0, 0.0, 0.0]
-
-    #Values to be returned
-    fiveyryield = NULL
-    currentyield = NULL
-
-    if CORPORATE_ACTIONS_DIVIDENDS in div_data:
-        if CORPORATE_ACTIONS_DIVIDENDS_DATA in div_data[CORPORATE_ACTIONS_DIVIDENDS]:
-            dictionary = get_lookup_table(div_data[CORPORATE_ACTIONS_DIVIDENDS][CORPORATE_ACTIONS_DIVIDENDS_HEADER])  # get the lookup table
-            for i in div_data[CORPORATE_ACTIONS_DIVIDENDS][CORPORATE_ACTIONS_DIVIDENDS_DATA]:
-                date = get_date(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_RECORD_DATE]])  # date of dividend issued
-
-                if end_of_fin_yr - relativedelta(years=1) < date <= end_of_fin_yr:
-                    prev_yr_totals[0] += float(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE]].replace('%', ''))
-                    # dividend issued current year
-                elif end_of_fin_yr - relativedelta(years=2) < date <= end_of_fin_yr - relativedelta(years=1):
-                    prev_yr_totals[1] += float(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE]].replace('%', ''))
-                    # dividend issued previous year
-                elif end_of_fin_yr - relativedelta(years=3) < date <= end_of_fin_yr - relativedelta(years=2):
-                    prev_yr_totals[2] += float(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE]].replace('%', ''))
-                    # dividend issued two years ago
-                elif end_of_fin_yr - relativedelta(years=4) < date <= end_of_fin_yr - relativedelta(years=3):
-                    prev_yr_totals[3] += float(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE]].replace('%', ''))
-                    # dividend issued three years ago
-                elif end_of_fin_yr - relativedelta(years=5) < date <= end_of_fin_yr - relativedelta(years=4):
-                    prev_yr_totals[4] += float(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE]].replace('%', ''))
-                    # dividend issued four years ago
-
-            # five year yield returned as a percentage
-            fiveyryield = sum(prev_yr_totals) * float(face_value) / (5.0 * float(price))
-            currentyield = prev_yr_totals[0] * float(face_value) / float(price)  # current yield returned as a percentage
-
-    return currentyield, fiveyryield
-
-"""
-Returns a look up table in the form of a dictionary
-Input: A list containing the headers
-Return: A dictionary containing corresponding indexes for each of the header values
-"""
-def get_lookup_table(param_list):
-    to_return = dict()
-
-    for i in range(len(param_list)):
-        to_return[param_list[i]] = i
-
-    return to_return
-
-"""
-Function that will read data from json file and into the dictionary
-"""
-def init():
-    global data_dict
-    try:
-        with open(file_name) as json_file:
-            data_dict = json.load(json_file)
+        with open(json_file_containing_data) as json_file:
+            dict_containing_company_data = json.load(json_file)
     except Exception as e:
         print(str(e))
 
 """
-Function for forming a tree of the different headers
-Return: Total number of data headers
+Purpose: To insert a column within the dictionary "dict_containing_spreadsheet_headers_with_indexes"
+        An extra column is inserted AFTER the specified "column" parameter
+
+Updates:
+    * The dictionary "dict_containing_spreadsheet_headers_with_indexes" with an added column after "column"
 """
-def getHeadersAsTree(parent_node, data_dict, parent_id, node_dict, node_counter):
-    count = 0
-    node_counter_copy = node_counter
-    for key in data_dict:
-        if str(key) != "__len__":
-            my_node = Node(key, parent=parent_node)
-            node_dict[node_counter_copy] = (key, parent_id)
-            curr_node_id = node_counter_copy
-            node_counter_copy += 1
-            count += 1
-            if isinstance(data_dict[key], dict):
-                count += getHeadersAsTree(my_node, data_dict[key], curr_node_id, node_dict, node_counter_copy)
-            if isinstance(data_dict[key], list):
-                for i in range(len(data_dict[key])):
-                    my_node_entry = Node(i, parent = my_node)
-                    node_dict[node_counter_copy] = (i, curr_node_id)
-                    node_counter_copy += 1
-                    count += 1
-    return count
+def insert_column_within_dict(column):
+    global dict_containing_spreadsheet_headers_with_indexes
+    for row in dict_containing_spreadsheet_headers_with_indexes:
+        for col in dict_containing_spreadsheet_headers_with_indexes[row]:
+            insert_column_within_dict_helper(col, dict_containing_spreadsheet_headers_with_indexes)
 
 """
-Function for creating excel file from given data. This includes ALL fields from the data
+Purpose: To insert a column within the dictionary "dict_containing_spreadsheet_headers_with_indexes"
+        An extra column is inserted AFTER the specified "column" parameter
+        Note: THIS IS A HELPER METHOD. insert_column_within_dict() IS THE ONLY METHOD THAT MUST CALL THIS
+
+Updates:
+    * The dictionary "dict_containing_spreadsheet_headers_with_indexes" with an added column after "column"
 """
-def get_data_all():
-    populate_headers()
+def insert_column_within_dict_helper(col, my_dict):
+    next_col = str(int(col) + 1)
+    if next_col in my_dict:
+        insert_column_within_dict_helper(next_col, my_dict)
+        my_dict[next_col] = my_dict[col]
+    else:
+        my_dict[next_col] = my_dict[col]
 
-def populate_headers():
-    global global_node_dict
-    count = 0
-    parent = Node(' Name')
+"""
+Purpose: To insert a header value within the dictionary "dict_containing_spreadsheet_headers_with_indexes"
 
-    temp = tqdm.tqdm(data_dict)
+Updates:
+    * The dictionary "dict_containing_spreadsheet_headers_with_indexes" with the new value
+"""
+def insert_dict_containing_spreadsheet_headers(row, column, value):
+    global dict_containing_spreadsheet_headers_with_indexes, end_col
+    if row in dict_containing_spreadsheet_headers_with_indexes:
+        if not column in dict_containing_spreadsheet_headers_with_indexes[row]:
+            dict_containing_spreadsheet_headers_with_indexes[row][column] = value
+            if column > end_col:
+                end_col = column
+    else:
+        dict_containing_spreadsheet_headers_with_indexes[row] = dict()
+        dict_containing_spreadsheet_headers_with_indexes[row][column] = value
+        if column > end_col:
+            end_col = column
 
-    for entry in temp:
-        temp_parent = Node(str(' Name'))
-        my_data = data_dict[entry]
-        temp_node_dict = {0: (' Name', -1)}
-        temp_count = getHeadersAsTree(temp_parent, my_data, 0, temp_node_dict, 1)
+"""
+Purpose: Populates the headers in dictionary "dict_containing_spreadsheet_headers_with_indexes"
 
-        if temp_count > count:
-            parent = temp_parent
-            count = temp_count
-            global_node_dict = temp_node_dict
+Prerequisites:
+    * "dict_containing_company_data" must be properly initialized with company data
 
-    fin_output = ""
-    for pre, fill, node in RenderTree(parent):
-        temp_str = "%s%s" % (pre, node.name)
-        fin_output += (temp_str + "\n")
+Updates:
+    * "dict_containing_spreadsheet_headers_with_indexes" with updated header values and corresponding indexes.
+"""
+def create_header_position():
+    global dict_containing_spreadsheet_headers, dict_containing_spreadsheet_headers_with_indexes
+    temp_dict = {}
+    convert(dict_containing_spreadsheet_headers, temp_dict)
+    create_header_position_helper(temp_dict, 0, 0)
 
-    my_list = fin_output.split("\n")
-    create_spreadsheet(my_list[:-1])
+"""
+Purpose: Populates the headers in dictionary "dict_containing_spreadsheet_headers_with_indexes"
+        Note: THIS IS A HELPER METHOD. create_header_position() IS THE ONLY METHOD THAT MUST CALL THIS
 
-def create_spreadsheet(my_list):
-    wb = Workbook()
+Prerequisites:
+    * "dict_containing_company_data" must be properly initialized with company data
+
+Updates:
+    * "dict_containing_spreadsheet_headers_with_indexes" with updated header values and corresponding indexes.
+"""
+def create_header_position_helper(company_data, row, column):
+    """"""
+    offset = 0
+    if isinstance(company_data, dict):
+        for key in company_data:
+            insert_dict_containing_spreadsheet_headers(row, column + offset, key)
+            offset += create_header_position_helper(company_data[key], row + 1, column + offset)
+
+            if not isinstance(company_data[key], dict):
+                offset += 1
+
+            if isinstance(company_data[key], dict) and not company_data[key]:
+                offset += 1
+    return offset
+
+"""
+Purpose: To convert a dictionary/list into a nesteddictionary. This includes a dictionary with nested lists/dictionaries.
+
+Parameters:
+    * company_data: The dictionary containing nested lists/dictionary
+    *to_insert: The new dictionary that will be created. This will not have any lists
+
+Updates:
+    *to_insert: With no lists, only a purely nested dictionary
+"""
+def convert(company_data, to_insert):
+    if isinstance(company_data, dict):
+        for key in company_data:
+            if isinstance(company_data[key], list) or isinstance(company_data[key], dict):
+                to_insert[key] = {}
+                convert(company_data[key], to_insert[key])
+            else:
+                to_insert[key] = company_data[key]
+    elif isinstance(company_data, list):
+        for entry in range(0, len(company_data)):
+            if isinstance(company_data[entry], list) or isinstance(company_data[entry], dict):
+                to_insert[entry] = {}
+                convert(company_data[entry], to_insert[entry])
+            else:
+                to_insert[entry] = company_data[entry]
+
+"""
+Purpose: To create a mega dictionary containing data of ALL companies. Older data will get overwritten as newer columns get detected.
+        This method is mainly used for gathering the headers for the spreadsheet
+
+Prerequisites:
+    * "dict_containing_company_data" must be properly initialized with company data
+
+Updates:
+    * "dict_containing_spreadsheet_headers" with updated header values
+"""
+def create_mega_data_dict():
+    global dict_containing_company_data, dict_containing_spreadsheet_headers
+
+    progressbar = tqdm.tqdm(dict_containing_company_data)
+    progressbar.set_description("Gathering data ...")
+    for company_code in progressbar:
+        company_data_dict = dict_containing_company_data[company_code]
+        merge(company_data_dict, dict_containing_spreadsheet_headers)
+
+"""
+Purpose: To merge two dictionaries. This also takes care of any nested dictionaries and nested lists that may exist
+
+Updates:
+    * header_data: The second dictionary that gets passed gets updated with the combined entries of both dictionaries.
+"""
+def merge(company_data, header_data):
+    if isinstance(company_data, dict):
+        for key in company_data:
+            if not key in header_data:
+                header_data[key] = company_data[key]
+            else:
+                if isinstance(company_data[key], dict) or isinstance(company_data[key], list) or isinstance(header_data[key], dict) or isinstance(header_data[key], list):
+                    merge(company_data[key], header_data[key])
+    elif isinstance(company_data, list):
+        if len(header_data) < len( company_data):
+            og_len = len(header_data)
+            for index in range(og_len, len(company_data)):
+                header_data.append(company_data[index])
+
+"""
+Purpose: To get the size of a data structure. This includes nested dictionaries, nested lists and any combinations of the two.
+
+Return: The size of the data structure
+"""
+def get_data_size(my_data):
+    return get_data_size_helper(my_data, 0)
+
+"""
+Purpose: To get the size of a data structure. This includes nested dictionaries, nested lists and any combinations of the two.
+        Note: THIS IS A HELPER METHOD. get_data_size(my_data) IS THE ONLY METHOD THAT MUST CALL THIS
+Return: The size of the data structure
+"""
+def get_data_size_helper(my_data, size):
+    current_size = size
+    if isinstance(my_data, dict):
+        for key in my_data:
+            if isinstance(my_data[key], dict) or isinstance(my_data[key], list):
+                current_size += get_data_size_helper(my_data[key], size)
+            else:
+                current_size += 1
+    elif isinstance(my_data, list):
+        current_size += len(my_data)
+    
+    return current_size
+
+"""
+Purpose: To write the headers to the appropriate spreadsheet
+
+Prerequisites:
+    * "dict_containing_spreadsheet_headers_with_indexes" must be properly initialized with the proper headers and corresponding indexes.
+"""
+def write_headers_to_spreadsheet():
+    global dict_containing_spreadsheet_headers_with_indexes
+    wb = openpyxl.Workbook()
+
+    print("Preparing spreadsheet headers ...")
 
     # grab the active worksheet
     ws = wb.active
 
-    for index in range(len(my_list)):
-        row = str(my_list[index]).count("│") + 1
-        ws.cell(row=row, column=index+1).value = str(my_list[index])[my_list[index].rindex(" ") + 1 :]
-    wb.save(excel_file_name)
+    for row_i in dict_containing_spreadsheet_headers_with_indexes:
+        for col_i in dict_containing_spreadsheet_headers_with_indexes[row_i]:
+            ws.cell (row = row_i + 1, column = col_i + 1).value = str(dict_containing_spreadsheet_headers_with_indexes[row_i][col_i])
+
+    wb.save(SPREADSHEET_FILE_NAME)
+    wb.close()
 
 """
-Function for creating excel file from given data
+Purpose: To fill in any missing headers AFTER write_headers_to_spreadsheet() has been called
+
+Prerequisites:
+    * write_headers_to_spreadsheet() must be called
+    * "dict_containing_spreadsheet_headers_with_indexes" must be properly initialized with the proper headers and corresponding indexes.
 """
-def get_data():
-    workbook = Workbook()
+def write_missing_headers_to_spreadsheet():
+    global end_col, list_with_headers_as_keys
 
-    # grab the active worksheet
-    worksheet = workbook.active
+    wb_obj = openpyxl.load_workbook(SPREADSHEET_FILE_NAME)
+    sheet_obj = wb_obj.active
 
-    for col_num, dat in enumerate(headers):
-        worksheet.cell(row=1, column=col_num + 1).value = dat
+    for col in range (1, end_col + 1):
+        start_row = 1
+        for row_i in range (len(dict_containing_spreadsheet_headers_with_indexes), 0, -1):
+            cell_obj = sheet_obj.cell(row = row_i, column = col).value
+            if not cell_obj is None:
+                start_row = row_i
+                break
 
-    count = 1
-    for i in data_dict:
-        try:
-            myArray = [i]
-            added = False
+        for row_i in range (start_row, 0, -1):
+            if sheet_obj.cell(row = row_i, column = col).value is None:
+                col_value = col - 1
+                new_value = sheet_obj.cell(row = row_i, column = col_value).value
+                while new_value is None:
+                    new_value = sheet_obj.cell(row = row_i, column = col_value).value
+                    col_value -= 1
+                sheet_obj.cell (row = row_i, column = col).value = str(new_value)
 
-            #Stock Name
-            if QUOTE_STOCK_NAME in data_dict[i][QUOTE]:
-                if data_dict[i][QUOTE][QUOTE_STOCK_NAME]:
-                    myArray.append(str(data_dict[i][QUOTE][QUOTE_STOCK_NAME]))
-                    added = True
+    wb_obj.save(SPREADSHEET_FILE_NAME)
 
-            if not added:
-                myArray.append('')
-            added = False
+    for col in range (1, end_col + 1):
+        my_list = []
+        for row_i in range (1, len(dict_containing_spreadsheet_headers_with_indexes) + 1):
+            value = sheet_obj.cell(row = row_i, column = col).value
+            if not value is None:
+                my_list.append(value)
+            else:
+                break
+        list_with_headers_as_keys.append(my_list)
 
-            #--------------------------------------------------------------------------------------------------------------#
-            # Stock Price
-            stockPrice = NULL
-            if QUOTE_STOCK_PRICE in data_dict[i][QUOTE]:
-                stockPrice = validate_double(data_dict[i][QUOTE][QUOTE_STOCK_PRICE])
-                if NULL in stockPrice:
-                    myArray.append(stockPrice)
-                else:
-                    myArray.append(float(stockPrice))
-                added = True
+    wb_obj.close()
 
-            if not added:
-                myArray.append('')
-            added = False
+"""
+Purpose: To write company data to the spreadsheet
 
-            #--------------------------------------------------------------------------------------------------------------#
-            #Percent Change
-            if QUOTE_PERCENT_CHANGE in data_dict[i][QUOTE]:
-                percentC = validate_double(data_dict[i][QUOTE][QUOTE_PERCENT_CHANGE])
-                if NULL in percentC:
-                    myArray.append(percentC)
-                else:
-                    myArray.append(float(percentC))
-                added = True
+Prerequisites:
+    * write_missing_headers_to_spreadsheet() must be called first
+    * dict_containing_company_data must be initialized with company data
+"""
+def write_company_data_to_spreadsheet():
+    global list_with_headers_as_keys, dict_containing_company_data, dict_containing_spreadsheet_headers_with_indexes
 
-            if not added:
-                myArray.append('')
-            added = False
+    wb_obj = openpyxl.load_workbook(SPREADSHEET_FILE_NAME)
+    sheet_obj = wb_obj.active
 
-            #--------------------------------------------------------------------------------------------------------------#
-            #52 high
-            if QUOTE_FIFTY_HIGH in data_dict[i][QUOTE]:
-                fh = validate_double(data_dict[i][QUOTE][QUOTE_FIFTY_HIGH])
-                if NULL in fh:
-                    myArray.append(fh)
-                else:
-                    myArray.append(float(fh))
+    progressbar = tqdm.tqdm(dict_containing_company_data)
+    progressbar.set_description("Writing company data ...")
+    row = len(dict_containing_spreadsheet_headers_with_indexes) + 2
 
-                added = True
+    for company_code in progressbar:
+        company_data = dict_containing_company_data[company_code]
+        for col in range (1, end_col + 1):
+            data = get_data_value(company_data, list_with_headers_as_keys[col - 1])
+            if data is None:
+                sheet_obj.cell (row = row, column = col).value = str("")
+            else:
+                sheet_obj.cell (row = row, column = col).value = str(data)
+        row += 1
 
-            if not added:
-                myArray.append('')
-            added = False
+    print("Saving file ...")
+    wb_obj.save(SPREADSHEET_FILE_NAME)
+    wb_obj.close()
 
-            #--------------------------------------------------------------------------------------------------------------#
-            #52 low
-            if QUOTE_FIFTY_LOW in data_dict[i][QUOTE]:
-                fl = validate_double(data_dict[i][QUOTE][QUOTE_FIFTY_LOW])
-                if NULL in fl:
-                    myArray.append(fl)
-                else:
-                    myArray.append(float(fl))
-                added = True
+"""
+Purpose: To extract a value from a nested dictionary/list based on a key list
 
-            if not added:
-                myArray.append('')
-            added = False
+Parameters: 
+    * company_data: Contains data
+    * header_list: The list containing keys/headers
+"""
+def get_data_value(company_data, header_list):
+    if (not company_data is None) and len(header_list) > 0 and len (company_data) > 0:
+        if isinstance (company_data, dict):
+            if header_list[0] in company_data:
+                return get_data_value(company_data[header_list[0]], header_list[1:])
+            else:
+                return None
+        elif isinstance (company_data, list):
+            array_index = int(header_list[0])
+            if array_index < len(company_data):
+                return get_data_value(company_data[array_index], header_list[1:])
+            else:
+                return None
+        else:
+            if (isinstance(company_data, list) or isinstance(company_data, dict)) and not company_data:
+                return None
+            else:
+                return company_data
+    else:
+        if (isinstance(company_data, list) or isinstance(company_data, dict)) and not company_data:
+                return None
+        else:
+            return company_data
+ 
+#----------------------------------------------------------------------------------------------------------
 
-            #--------------------------------------------------------------------------------------------------------------#
-            # Month High Low
-            if QUOTE_MONTH_HIGH_LOW in data_dict[i][QUOTE]:
-                myArray.append(str(data_dict[i][QUOTE][QUOTE_MONTH_HIGH_LOW]))
-                added = True
+"""
+Block 1
+"""
+get_bse_codes()
 
-            if not added:
-                myArray.append('')
-            added = False
+"""
+Block 2
+"""
+create_json_data()
 
-            #--------------------------------------------------------------------------------------------------------------#
-            #Face Value
-            faceValue = NULL
-            if QUOTE_FACE_VALUE in data_dict[i][QUOTE]:
-                faceValue = validate_double(data_dict[i][QUOTE][QUOTE_FACE_VALUE])
+"""
+Block 3
+"""
 
-                if NULL in faceValue:
-                    myArray.append(faceValue)
-                else:
-                    myArray.append(float(faceValue))
-                added = True
-
-            if not added:
-                myArray.append('')
-            added = False
-
-            #--------------------------------------------------------------------------------------------------------------#
-            #Market Cap
-            if QUOTE_MARKET_CAP in data_dict[i][QUOTE]:
-                if QUOTE_MARKET_CAP_IN in data_dict[i][QUOTE][QUOTE_MARKET_CAP] and QUOTE_MARKET_CAP_VALUE in data_dict[i][QUOTE][QUOTE_MARKET_CAP]:
-                    value = validate_double(data_dict[i][QUOTE][QUOTE_MARKET_CAP][QUOTE_MARKET_CAP_VALUE])
-                    if not NULL in value:
-                        value = float(value) * number_suffix[data_dict[i][QUOTE][QUOTE_MARKET_CAP][QUOTE_MARKET_CAP_IN]]
-                        myArray.append(float(str(value)))
-                    else:
-                        myArray.append(str(value))
-                    added = True
-
-            if not added:
-                myArray.append('')
-            added = False
-
-            #--------------------------------------------------------------------------------------------------------------#
-            #PE
-
-            if FINANCIAL_RATIOS_VALUE_RATIO in data_dict[i][FINANCIAL_RATIOS]:
-                if FINANCIAL_RATIOS_PE in data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_VALUE_RATIO]:
-                    value = validate_double(data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_VALUE_RATIO][FINANCIAL_RATIOS_PE])
-                    if not NULL in value:
-                        myArray.append(float(str(value)))
-                        added = True
-
-            if not added:
-                if FINANCIAL_RATIOS_PROFIT_RATIO in data_dict[i][FINANCIAL_RATIOS]:
-                    if FINANCIAL_RATIOS_PE in data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_PROFIT_RATIO]:
-                        value = validate_double(data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_PROFIT_RATIO][FINANCIAL_RATIOS_PE])
-                        if not NULL in value:
-                            myArray.append(float(str(value)))
-                            added = True
-
-            if not added:
-                if PEER_COMPARISON_TABLE in data_dict[i][PEER_COMPARISON]:
-                    for temp in data_dict[i][PEER_COMPARISON][PEER_COMPARISON_TABLE]:
-                        if PEER_COMPARISON_SCRIP_CD in temp:
-                            if str(temp[PEER_COMPARISON_SCRIP_CD]) == i and PEER_COMPARISON_PE in temp:
-                                value = (str(validate_double(temp[PEER_COMPARISON_PE])))
-                                if NULL in value:
-                                    myArray.append(value)
-                                else:
-                                    myArray.append(float(value))
-                                added = True
-
-            if not added:
-                myArray.append('')
-            added = False
-
-            #--------------------------------------------------------------------------------------------------------------#
-            #EPS
-
-            if FINANCIAL_RATIOS_VALUE_RATIO in data_dict[i][FINANCIAL_RATIOS]:
-                if FINANCIAL_RATIOS_EPS in data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_VALUE_RATIO]:
-                    value = validate_double(data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_VALUE_RATIO][FINANCIAL_RATIOS_EPS])
-                    if not NULL in value:
-                        myArray.append(float((str(value))))
-                        added = True
-
-            if not added:
-                if FINANCIAL_RATIOS_PROFIT_RATIO in data_dict[i][FINANCIAL_RATIOS]:
-                    if FINANCIAL_RATIOS_EPS in data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_PROFIT_RATIO]:
-                        value = validate_double(data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_PROFIT_RATIO][FINANCIAL_RATIOS_EPS])
-                        if not NULL in value:
-                            myArray.append(float(str(value)))
-                            added = True
-
-            if not added:
-                if PEER_COMPARISON_TABLE in data_dict[i][PEER_COMPARISON]:
-                    for temp in data_dict[i][PEER_COMPARISON][PEER_COMPARISON_TABLE]:
-                        if PEER_COMPARISON_SCRIP_CD in temp:
-                            if str(temp[PEER_COMPARISON_SCRIP_CD]) == i and PEER_COMPARISON_EPS in temp:
-                                value = (str(validate_double(temp[PEER_COMPARISON_EPS])))
-                                if NULL in value:
-                                    myArray.append(value)
-                                else:
-                                    myArray.append(float(value))
-                                added = True
-
-            if not added:
-                myArray.append('')
-            added = False
-
-            #--------------------------------------------------------------------------------------------------------------#
-            #CEPS
-
-            if FINANCIAL_RATIOS_VALUE_RATIO in data_dict[i][FINANCIAL_RATIOS]:
-                if FINANCIAL_RATIOS_CEPS in data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_VALUE_RATIO]:
-                    value = validate_double(data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_VALUE_RATIO][FINANCIAL_RATIOS_CEPS])
-                    if not NULL in value:
-                        myArray.append(float(str(value)))
-                        added = True
-
-            if not added:
-                if FINANCIAL_RATIOS_PROFIT_RATIO in data_dict[i][FINANCIAL_RATIOS]:
-                    if FINANCIAL_RATIOS_CEPS in data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_PROFIT_RATIO]:
-                        value = validate_double(data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_PROFIT_RATIO][FINANCIAL_RATIOS_CEPS])
-                        if not NULL in value:
-                            myArray.append(float(str(value)))
-                            added = True
-
-            if not added:
-                if PEER_COMPARISON_TABLE in data_dict[i][PEER_COMPARISON]:
-                    for temp in data_dict[i][PEER_COMPARISON][PEER_COMPARISON_TABLE]:
-                        if PEER_COMPARISON_SCRIP_CD in temp:
-                            if str(temp[PEER_COMPARISON_SCRIP_CD]) == i and PEER_COMPARISON_CEPS in temp:
-                                value = (str(validate_double(temp[PEER_COMPARISON_CEPS])))
-                                if NULL in value:
-                                    myArray.append(value)
-                                else:
-                                    myArray.append(float(value))
-                                added = True
-
-            if not added:
-                myArray.append('')
-            added = False
-
-            #--------------------------------------------------------------------------------------------------------------#
-            #ROE
-
-            if FINANCIAL_RATIOS_VALUE_RATIO in data_dict[i][FINANCIAL_RATIOS]:
-                if FINANCIAL_RATIOS_ROE in data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_VALUE_RATIO]:
-                    value = validate_double(data_dict[i][FINANCIAL_RATIOS][FINANCIAL_RATIOS_VALUE_RATIO][FINANCIAL_RATIOS_ROE])
-                    if not NULL in value:
-                        myArray.append(float(str(value)))
-                        added = True
-
-            if not added:
-                myArray.append('')
-            added = False
-
-            # --------------------------------------------------------------------------------------------------------------#
-            # Index
-
-            if INDEX in data_dict[i][QUOTE]:
-                myArray.append(str(data_dict[i][QUOTE][INDEX]))
-            #--------------------------------------------------------------------------------------------------------------#
-            # Dividend Yield
-
-            if not NULL in faceValue and not NULL in stockPrice:
-                array = handle_dividend(stockPrice, faceValue, data_dict[i][CORPORATE_ACTIONS])
-                if NULL in str(array[0]):
-                    myArray.append(array[0])
-                else:
-                    myArray.append(float(array[0]))
-                if NULL in str(array[1]):
-                    myArray.append(array[1])
-                else:
-                    myArray.append(float(array[1]))
-
-            # --------------------------------------------------------------------------------------------------------------#
-
-            temp = data_dict[i][HOLDING_INFO_ANALYSIS]
-            if HOLDING_INFO_ANALYSIS_HOLDINGS in temp:
-
-                if HOLDING_INFO_ANALYSIS_DATA in temp[HOLDING_INFO_ANALYSIS_HOLDINGS]:
-                    if HOLDING_INFO_ANALYSIS_PIE in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA]:
-                        if HOLDING_INFO_ANALYSIS_MUTUAL_FUNDS in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE]:
-                            if HOLDING_INFO_ANALYSIS_PERC in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_MUTUAL_FUNDS]:
-                                myArray.append(float(validate_double(temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_MUTUAL_FUNDS][HOLDING_INFO_ANALYSIS_PERC].replace('%',''))))
-
-                        if HOLDING_INFO_ANALYSIS_INSURANCE in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE]:
-                            if HOLDING_INFO_ANALYSIS_PERC in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_INSURANCE]:
-                                myArray.append(float(validate_double(temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][ HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_INSURANCE][HOLDING_INFO_ANALYSIS_PERC].replace('%',''))))
-
-                        if HOLDING_INFO_ANALYSIS_FII in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE]:
-                            if HOLDING_INFO_ANALYSIS_PERC in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_FII]:
-                                myArray.append(float(validate_double(temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_FII][HOLDING_INFO_ANALYSIS_PERC].replace('%',''))))
-
-                        if HOLDING_INFO_ANALYSIS_PROMOTERS in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE]:
-                            if HOLDING_INFO_ANALYSIS_PERC in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_PROMOTERS]:
-                                myArray.append(float(validate_double(temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_PROMOTERS][HOLDING_INFO_ANALYSIS_PERC].replace('%',''))))
-
-                        if HOLDING_INFO_ANALYSIS_OTHER in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE]:
-                            if HOLDING_INFO_ANALYSIS_PERC in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_OTHER]:
-                                myArray.append(float(validate_double(temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_OTHER][HOLDING_INFO_ANALYSIS_PERC].replace('%', ''))))
-
-                        if HOLDING_INFO_ANALYSIS_NON_INSTITUTION in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE]:
-                            if HOLDING_INFO_ANALYSIS_PERC in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_NON_INSTITUTION]:
-                                myArray.append(float(validate_double(temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_NON_INSTITUTION][HOLDING_INFO_ANALYSIS_PERC].replace('%', ''))))
-
-                        if HOLDING_INFO_ANALYSIS_OTHER_DIIS in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][ HOLDING_INFO_ANALYSIS_PIE]:
-                            if HOLDING_INFO_ANALYSIS_PERC in temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_OTHER_DIIS]:
-                                myArray.append(float(validate_double(temp[HOLDING_INFO_ANALYSIS_HOLDINGS][HOLDING_INFO_ANALYSIS_DATA][HOLDING_INFO_ANALYSIS_PIE][HOLDING_INFO_ANALYSIS_OTHER_DIIS][HOLDING_INFO_ANALYSIS_PERC].replace('%', ''))))
-
-            for col_num, dat in enumerate(myArray):
-                worksheet.cell(row=count+1, column=col_num + 1).value = dat
-
-            count += 1
-
-        except Exception as e:
-            print(str(e) + " " + i)
-
-    workbook.save(excel_file_name)
-
-#CALL store_data ONLY IF LATEST DATA IS REQUIRED. THIS PROCESS CAN TAKE UP TO 24 HOURS
-#store_data()
-init()
-#get_data()
-get_data_all();
+read_from_json_file()
+create_mega_data_dict()
+create_header_position()
+write_headers_to_spreadsheet()
+write_missing_headers_to_spreadsheet()
+write_company_data_to_spreadsheet()
