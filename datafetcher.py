@@ -7,6 +7,8 @@ import json
 import tqdm
 import matplotlib.pyplot as plt
 import openpyxl
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 """
 Block 1 variables
@@ -414,20 +416,110 @@ def write_company_data_to_spreadsheet():
     progressbar.set_description("Writing company data ...")
     row = len(dict_containing_spreadsheet_headers_with_indexes) + 2
 
+    sheet_obj.cell (row = 1, column = end_col + 1).value = "Dividend yield"
+    sheet_obj.cell (row = 1, column = end_col + 2).value = "5 yr. avg. dividend yield"
+
     for company_code in progressbar:
         company_data = dict_containing_company_data[company_code]
+        dividend_info = get_dividend_info(company_data)
         for col in range (1, end_col + 1):
             data = get_data_value(company_data, list_with_headers_as_keys[col - 1])
             if data is None:
                 sheet_obj.cell (row = row, column = col).value = str("")
             else:
                 sheet_obj.cell (row = row, column = col).value = str(data)
+            
+        if dividend_info[0] is None:
+            sheet_obj.cell (row = row, column = end_col + 1).value = "0.0"
+        else:
+            sheet_obj.cell (row = row, column = end_col + 1).value = str(dividend_info[0])
+
+        if dividend_info[1] is None:
+            sheet_obj.cell (row = row, column = end_col + 2).value = "0.0"
+        else:
+            sheet_obj.cell (row = row, column = end_col + 2).value = str(dividend_info[1])
+
         row += 1
 
     print("Saving file ...")
     wb_obj.save(SPREADSHEET_FILE_NAME)
     wb_obj.close()
 
+"""
+Returns a look up table in the form of a dictionary
+Input: A list containing the headers
+Return: A dictionary containing corresponding indexes for each of the header values
+"""
+def get_lookup_table(param_list):
+    to_return = dict()
+
+    for i in range(len(param_list)):
+        to_return[param_list[i]] = i
+
+    return to_return
+
+def get_dividend_info(company_data):
+
+    #Values to be returned
+    fiveyryield = None
+    currentyield = None
+    stock_price = None
+    face_value = None
+
+    if QUOTE_STOCK_PRICE in company_data[QUOTE]:
+        stock_price = validate_double(company_data[QUOTE][QUOTE_STOCK_PRICE])
+
+    if QUOTE_FACE_VALUE in company_data[QUOTE]:
+        face_value = validate_double(company_data[QUOTE][QUOTE_FACE_VALUE])
+
+    if stock_price and face_value:
+        div_data = company_data[CORPORATE_ACTIONS]
+        end_of_fin_yr = datetime.now()
+
+        # each of the previous 5 year slabs. This will contain dividend percentages
+        prev_yr_totals = [0.0, 0.0, 0.0, 0.0, 0.0]
+
+        if CORPORATE_ACTIONS_DIVIDENDS in div_data:
+            if CORPORATE_ACTIONS_DIVIDENDS_DATA in div_data[CORPORATE_ACTIONS_DIVIDENDS]:
+                dictionary = get_lookup_table(div_data[CORPORATE_ACTIONS_DIVIDENDS][CORPORATE_ACTIONS_DIVIDENDS_HEADER])  # get the lookup table
+                for i in div_data[CORPORATE_ACTIONS_DIVIDENDS][CORPORATE_ACTIONS_DIVIDENDS_DATA]:
+                    date = datetime.strptime(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_RECORD_DATE]], date_format)  # date of dividend issued
+
+                    if end_of_fin_yr - relativedelta(years=1) < date <= end_of_fin_yr:
+                        prev_yr_totals[0] += float(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE]].replace('%', ''))
+                        # dividend issued current year
+                    elif end_of_fin_yr - relativedelta(years=2) < date <= end_of_fin_yr - relativedelta(years=1):
+                        prev_yr_totals[1] += float(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE]].replace('%', ''))
+                        # dividend issued previous year
+                    elif end_of_fin_yr - relativedelta(years=3) < date <= end_of_fin_yr - relativedelta(years=2):
+                        prev_yr_totals[2] += float(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE]].replace('%', ''))
+                        # dividend issued two years ago
+                    elif end_of_fin_yr - relativedelta(years=4) < date <= end_of_fin_yr - relativedelta(years=3):
+                        prev_yr_totals[3] += float(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE]].replace('%', ''))
+                        # dividend issued three years ago
+                    elif end_of_fin_yr - relativedelta(years=5) < date <= end_of_fin_yr - relativedelta(years=4):
+                        prev_yr_totals[4] += float(i[dictionary[CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE]].replace('%', ''))
+                        # dividend issued four years ago
+
+                # five year yield returned as a percentage
+                fiveyryield = sum(prev_yr_totals) * float(face_value) / (5.0 * float(stock_price))
+                currentyield = prev_yr_totals[0] * float(face_value) / float(stock_price)  # current yield returned as a percentage
+
+    return currentyield, fiveyryield
+
+"""
+Function for validating a float as a string
+Returns None if invalid
+"""
+def validate_double(str_param):
+
+    str_param = str(str_param)
+    # noinspection PyBroadException
+    try:
+        to_return = str(float(str_param.replace(',', '')))  # if any commas exist, remove them
+    except Exception:  # exception occured, just return NULL
+        to_return = None
+    return to_return
 """
 Purpose: To extract a value from a nested dictionary/list based on a key list
 
@@ -464,12 +556,12 @@ def get_data_value(company_data, header_list):
 """
 Block 1
 """
-get_bse_codes()
+#get_bse_codes()
 
 """
 Block 2
 """
-create_json_data()
+#create_json_data()
 
 """
 Block 3

@@ -35,3 +35,12 @@ Block 3 variables
 
 #Name of the soreadsheet file within which company data will be written
 SPREADSHEET_FILE_NAME = "data.xlsx"
+QUOTE_STOCK_PRICE = "stockPrice"
+QUOTE_FACE_VALUE = "faceValue"
+
+CORPORATE_ACTIONS_DIVIDENDS = "dividends"
+CORPORATE_ACTIONS_DIVIDENDS_DATA = "data"
+CORPORATE_ACTIONS_DIVIDENDS_HEADER = "header"
+CORPORATE_ACTIONS_DIVIDENDS_RECORD_DATE = "Record Date"
+CORPORATE_ACTIONS_DIVIDENDS_DIVIDEND_PERCENTAGE = "Dividend Percentage"
+date_format = "%d-%m-%Y"
