@@ -554,6 +554,11 @@ def get_data_value(company_data, header_list):
 #----------------------------------------------------------------------------------------------------------
 
 """
+Only execute block 1 and 2 functions if latest data is desired. this can take up to 24 hours.
+If you only want the spreadsheet generated based on an existing json, run only block 3 functions
+"""
+
+"""
 Block 1
 """
 #get_bse_codes()
@@ -566,7 +571,6 @@ Block 2
 """
 Block 3
 """
-
 read_from_json_file()
 create_mega_data_dict()
 create_header_position()
