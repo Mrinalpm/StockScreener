@@ -128,6 +128,23 @@ def create_json_data():
 
                     count = 0
                 progressbar.set_description("Reading companies")
+
+        file = open(json_file_containing_data, mode='w+')
+
+        all_of_it = file.read()
+
+        # close the file
+        file.close()
+
+        open(json_file_containing_data, 'w').close() #clear
+        try:
+            with open(json_file_containing_data, 'w') as fp:
+                json.dump(data_dict, fp, allow_nan=True)
+            fp.close()
+        except Exception: #something went wrong, restore old data
+            with open(json_file_containing_data, 'w') as fp:
+                fp.write(all_of_it)
+            fp.close()
             
     except Exception as e:
         print(str(e))
