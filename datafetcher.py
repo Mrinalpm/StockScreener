@@ -439,24 +439,25 @@ def write_company_data_to_spreadsheet():
 
     for company_code in progressbar:
         company_data = dict_containing_company_data[company_code]
-        dividend_info = get_dividend_info(company_data)
-        for col in range (1, end_col + 1):
-            data = get_data_value(company_data, list_with_headers_as_keys[col - 1])
-            if data is None:
-                sheet_obj.cell (row = row, column = col).value = str("")
+        if 'stockName' in company_data['quote'] and company_data['quote']['stockName']:
+            dividend_info = get_dividend_info(company_data)
+            for col in range (1, end_col + 1):
+                data = get_data_value(company_data, list_with_headers_as_keys[col - 1])
+                if data is None:
+                    sheet_obj.cell (row = row, column = col).value = str("")
+                else:
+                    sheet_obj.cell (row = row, column = col).value = ILLEGAL_CHARACTERS_RE.sub(r'',str(data))
+            if dividend_info[0] is None:
+                sheet_obj.cell (row = row, column = end_col + 1).value = "0.0"
             else:
-                sheet_obj.cell (row = row, column = col).value = ILLEGAL_CHARACTERS_RE.sub(r'',str(data))
-        if dividend_info[0] is None:
-            sheet_obj.cell (row = row, column = end_col + 1).value = "0.0"
-        else:
-            sheet_obj.cell (row = row, column = end_col + 1).value = str(dividend_info[0])
+                sheet_obj.cell (row = row, column = end_col + 1).value = str(dividend_info[0])
 
-        if dividend_info[1] is None:
-            sheet_obj.cell (row = row, column = end_col + 2).value = "0.0"
-        else:
-            sheet_obj.cell (row = row, column = end_col + 2).value = str(dividend_info[1])
+            if dividend_info[1] is None:
+                sheet_obj.cell (row = row, column = end_col + 2).value = "0.0"
+            else:
+                sheet_obj.cell (row = row, column = end_col + 2).value = str(dividend_info[1])
 
-        row += 1
+            row += 1
 
     print("Saving file ...")
     wb_obj.save(SPREADSHEET_FILE_NAME)
@@ -521,7 +522,8 @@ def get_dividend_info(company_data):
                 # five year yield returned as a percentage
                 fiveyryield = sum(prev_yr_totals) * float(face_value) / (5.0 * float(stock_price))
                 currentyield = prev_yr_totals[0] * float(face_value) / float(stock_price)  # current yield returned as a percentage
-
+                #fiveyryield = sum(prev_yr_totals)  / (5.0 * float(stock_price))
+                #currentyield = prev_yr_totals[0] / float(stock_price)  # current yield returned as a percentage
     return currentyield, fiveyryield
 
 """
