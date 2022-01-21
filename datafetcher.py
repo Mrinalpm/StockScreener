@@ -522,8 +522,7 @@ def get_dividend_info(company_data):
                 # five year yield returned as a percentage
                 fiveyryield = sum(prev_yr_totals) * float(face_value) / (5.0 * float(stock_price))
                 currentyield = prev_yr_totals[0] * float(face_value) / float(stock_price)  # current yield returned as a percentage
-                #fiveyryield = sum(prev_yr_totals)  / (5.0 * float(stock_price))
-                #currentyield = prev_yr_totals[0] / float(stock_price)  # current yield returned as a percentage
+
     return currentyield, fiveyryield
 
 """
