@@ -7,6 +7,7 @@ import json
 import tqdm
 import matplotlib.pyplot as plt
 import openpyxl
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
@@ -444,8 +445,7 @@ def write_company_data_to_spreadsheet():
             if data is None:
                 sheet_obj.cell (row = row, column = col).value = str("")
             else:
-                sheet_obj.cell (row = row, column = col).value = str(data)
-            
+                sheet_obj.cell (row = row, column = col).value = ILLEGAL_CHARACTERS_RE.sub(r'',str(data))
         if dividend_info[0] is None:
             sheet_obj.cell (row = row, column = end_col + 1).value = "0.0"
         else:
